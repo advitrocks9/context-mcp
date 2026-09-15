@@ -142,6 +142,11 @@ def _fresh(state: dict[str, Any]) -> str | None:
     return str(access) if access and state.get("exp", 0) - time.time() > SKEW else None
 
 
+def have_credentials() -> bool:
+    state = _state_load()
+    return bool(state.get("refresh") or state.get("access"))
+
+
 def get_token() -> str:
     token = _fresh(_state_load())
     if token:

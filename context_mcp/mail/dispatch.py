@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+import sys
+
 from context_mcp.common import parallel_map, parse_date
 from context_mcp.mail import gmail, outlook
+from context_mcp.mail.outlook_auth import have_credentials
 
 PROVIDERS = {"gmail": gmail, "outlook": outlook}
 
@@ -85,3 +88,19 @@ def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str],
 def is_reversible(entry: dict[str, Any]) -> bool:
     return entry.get("op") in {"move", "tag", "mark_read", "flag", "trash", "mark_spam", "untrash"}
 
+def _warm_gmail() -> None:
+    gmail.list_folders()
+    gmail.list_messages_page(limit=1)
+
+
+def prewarm() -> None:
+    """Mint tokens and open the TLS connections before the first tool call needs them."""
+    def warm(name: str, call: Callable[[], Any]) -> None:
+        try:
+            call()
+        except Exception as exc:
+            print(f"prewarm {name}: {exc}", file=sys.stderr)
+
+    warm("gmail", _warm_gmail)
+    if have_credentials():
+        warm("outlook", outlook.list_folders)
