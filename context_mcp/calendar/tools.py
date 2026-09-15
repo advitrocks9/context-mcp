@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from context_mcp.calendar import calendar_api
+from context_mcp.common import parallel_map
 from context_mcp.toolkit import DESTRUCTIVE, READ, REVERSIBLE
 
 Read = Annotated[Literal["gmail", "outlook", "both"], Field(description="Calendar to read. 'both' merges; mutations need a specific one.")]
@@ -16,12 +17,14 @@ Notify = Annotated[bool, Field(description="Email attendees/organizer about this
 
 
 def _read(fn: str, provider: str, **kwargs: Any) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for name in (["gmail", "outlook"] if provider == "both" else [provider]):
+    def call(name: str) -> list[dict[str, Any]]:
         try:
-            out.extend(getattr(calendar_api, fn)(name, **kwargs))
+            return getattr(calendar_api, fn)(name, **kwargs)
         except Exception as exc:
-            out.append({"provider": name, "error": str(exc)})
+            return [{"provider": name, "error": str(exc)}]
+
+    out = [row for rows in parallel_map(call, ["gmail", "outlook"] if provider == "both" else [provider])
+           for row in rows]
     out.sort(key=lambda e: e.get("start", "") or "")
     return out
 

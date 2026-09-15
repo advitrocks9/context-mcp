@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from context_mcp.common import parse_date
+from context_mcp.common import parallel_map, parse_date
 from context_mcp.mail import gmail, outlook
 
 PROVIDERS = {"gmail": gmail, "outlook": outlook}
@@ -40,30 +40,38 @@ def message_page(provider: str, folder: str = "inbox", query: str = "",
     estimates: dict[str, int] = {}
     totals: dict[str, int] = {}
     errors: list[dict[str, str]] = []
-    for name, backend in targets(provider):
+
+    def fetch(target: tuple[str, Any]) -> tuple[str, dict[str, Any] | Exception]:
+        name, backend = target
         try:
-            page = backend.list_messages_page(folder=folder, query=query, unread_only=unread_only,
-                                              limit=limit, cursor=cursor if provider != "both" else "")
-            messages.extend(page.get("messages", []))
-            if page.get("next_cursor"):
-                next_cursors[name] = str(page["next_cursor"])
-            if page.get("result_size_estimate") is not None:
-                estimates[name] = int(page["result_size_estimate"])
-            if page.get("total_count") is not None:
-                totals[name] = int(page["total_count"])
+            return name, backend.list_messages_page(folder=folder, query=query, unread_only=unread_only,
+                                                    limit=limit, cursor=cursor if provider != "both" else "")
         except Exception as exc:
-            errors.append({"provider": name, "error": str(exc)})
+            return name, exc
+
+    for name, page in parallel_map(fetch, targets(provider)):
+        if isinstance(page, Exception):
+            errors.append({"provider": name, "error": str(page)})
+            continue
+        messages.extend(page.get("messages", []))
+        if page.get("next_cursor"):
+            next_cursors[name] = str(page["next_cursor"])
+        if page.get("result_size_estimate") is not None:
+            estimates[name] = int(page["result_size_estimate"])
+        if page.get("total_count") is not None:
+            totals[name] = int(page["total_count"])
     return {"messages": _merge(messages), "returned": len(messages), "next_cursors": next_cursors,
             "result_size_estimates": estimates, "total_counts": totals, "errors": errors}
 
 
 def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str], dict[str, Any]]) -> dict[str, Any]:
-    results: list[dict[str, Any]] = []
-    for mid in ids:
+    def run(mid: str) -> dict[str, Any]:
         try:
-            results.append({"id": mid, "ok": True, "result": apply_one(mid)})
+            return {"id": mid, "ok": True, "result": apply_one(mid)}
         except Exception as exc:
-            results.append({"id": mid, "ok": False, "error": str(exc)})
+            return {"id": mid, "ok": False, "error": str(exc)}
+
+    results = parallel_map(run, ids)
     ok = sum(1 for r in results if r["ok"])
     return {"provider": provider, "action": action, "requested": len(ids),
             "succeeded": ok, "failed": len(ids) - ok, "results": results}

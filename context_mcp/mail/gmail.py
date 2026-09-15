@@ -15,7 +15,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
-from context_mcp.common import audit, http, load_env
+from context_mcp.common import audit, http, load_env, parallel_map
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -184,17 +184,19 @@ def list_messages_page(
 
     response = http("GET", f"{API}/messages?{urllib.parse.urlencode(params)}", _auth())
     listed = response.get("messages", []) or []
-    messages: list[dict[str, Any]] = []
-    for item in listed[: int(limit)]:
-        message = http(
+    headers = _auth()
+
+    def fetch(item: dict[str, Any]) -> dict[str, Any]:
+        return _norm(http(
             "GET",
             f"{API}/messages/{item['id']}?format=metadata"
             "&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc"
             "&metadataHeaders=Subject&metadataHeaders=Date"
             "&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post",
-            _auth(),
-        )
-        messages.append(_norm(message))
+            headers,
+        ))
+
+    messages = parallel_map(fetch, listed[: int(limit)])
     return {
         "provider": "gmail",
         "messages": messages,

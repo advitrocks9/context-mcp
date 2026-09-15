@@ -13,7 +13,7 @@ from typing import Any
 
 from context_mcp.mail import gmail
 from context_mcp.mail import outlook
-from context_mcp.common import http
+from context_mcp.common import http, parallel_map
 
 OUTLOOK = "https://outlook.office.com/api/v2.0/me"
 GOOGLE = "https://www.googleapis.com/calendar/v3"
@@ -237,12 +237,13 @@ def bulk_delete(provider: str, start: str = "", end: str = "", query: str = "",
                 "sample": sample,
                 "reason": f"{len(matches)} events exceeds the {BULK_CONFIRM_THRESHOLD}-event safety cap. "
                           "Re-run with confirm=true to proceed."}
-    deleted = []
-    for e in matches:
+    def remove(e: dict[str, Any]) -> Any:
         try:
             delete_event(provider, e["id"], notify=notify)
-            deleted.append(e["id"])
+            return e["id"]
         except Exception as exc:
-            deleted.append({"id": e["id"], "error": str(exc)})
+            return {"id": e["id"], "error": str(exc)}
+
+    deleted = parallel_map(remove, matches)
     return {"provider": provider, "dry_run": False, "requested": len(matches),
             "deleted": sum(1 for d in deleted if isinstance(d, str)), "results": deleted}
