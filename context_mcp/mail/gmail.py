@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import threading
 import time
 import urllib.parse
 from email.message import EmailMessage
@@ -19,6 +20,7 @@ from context_mcp.common import audit, http, load_env
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 _cache: dict[str, str | float | None] = {"token": None, "exp": 0.0}
+_cache_lock = threading.Lock()
 
 
 def _creds() -> tuple[str, str, str]:
@@ -34,27 +36,35 @@ def _creds() -> tuple[str, str, str]:
     return client_id, client_secret, refresh_token
 
 
-def get_token() -> str:
+def _cached_token() -> str | None:
     token = _cache["token"]
     expires_at = float(_cache["exp"] or 0)
-    if isinstance(token, str) and expires_at - time.time() > 120:
-        return token
+    return token if isinstance(token, str) and expires_at - time.time() > 120 else None
 
-    client_id, client_secret, refresh_token = _creds()
-    response = http(
-        "POST",
-        TOKEN_URL,
-        data={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        },
-        form=True,
-    )
-    _cache["token"] = str(response["access_token"])
-    _cache["exp"] = time.time() + float(response.get("expires_in", 3600))
-    return str(_cache["token"])
+
+def get_token() -> str:
+    token = _cached_token()
+    if token:
+        return token
+    with _cache_lock:
+        token = _cached_token()
+        if token:
+            return token
+        client_id, client_secret, refresh_token = _creds()
+        response = http(
+            "POST",
+            TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            form=True,
+        )
+        _cache["token"] = str(response["access_token"])
+        _cache["exp"] = time.time() + float(response.get("expires_in", 3600))
+        return str(_cache["token"])
 
 
 def _auth() -> dict[str, str]:

@@ -12,6 +12,7 @@ import contextlib
 import json
 import os
 import tempfile
+import threading
 import time
 from typing import Any
 
@@ -25,6 +26,7 @@ TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MAIL_URL = "https://outlook.office.com/mail/"
 
 STATE = CONFIG_DIR / "outlook-token.json"
+_token_lock = threading.Lock()
 SKEW = 300
 HARVEST_DEADLINE = 90
 
@@ -140,15 +142,25 @@ def _commit(found: dict[str, Any]) -> str:
     return access
 
 
+def _fresh(state: dict[str, Any]) -> str | None:
+    access = state.get("access")
+    return str(access) if access and state.get("exp", 0) - time.time() > SKEW else None
+
+
 def get_token() -> str:
-    state = _state_load()
-    if state.get("access") and state.get("exp", 0) - time.time() > SKEW:
-        return state["access"]
-    refresh_token = state.get("refresh")
-    if refresh_token:
-        try:
-            return _commit(_mint(refresh_token))
-        except RuntimeError as exc:
-            if "AADSTS" not in str(exc):
-                raise
-    return _commit(_harvest())
+    token = _fresh(_state_load())
+    if token:
+        return token
+    with _token_lock:
+        state = _state_load()
+        token = _fresh(state)
+        if token:
+            return token
+        refresh_token = state.get("refresh")
+        if refresh_token:
+            try:
+                return _commit(_mint(refresh_token))
+            except RuntimeError as exc:
+                if "AADSTS" not in str(exc):
+                    raise
+        return _commit(_harvest())
