@@ -14,6 +14,8 @@ from context_mcp.mail.outlook_auth import get_token
 
 BASE = "https://outlook.office.com/api/v2.0"
 
+batch_move = batch_tag = batch_flag = batch_mark_read = batch_mark_spam = None
+
 
 def _auth() -> dict[str, str]:
     return {"Authorization": "Bearer " + get_token(), "Accept": "application/json"}

@@ -64,14 +64,19 @@ def message_page(provider: str, folder: str = "inbox", query: str = "",
             "result_size_estimates": estimates, "total_counts": totals, "errors": errors}
 
 
-def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str], dict[str, Any]]) -> dict[str, Any]:
+def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str], dict[str, Any]],
+          apply_all: Callable[[list[str]], None] | None = None) -> dict[str, Any]:
     def run(mid: str) -> dict[str, Any]:
         try:
             return {"id": mid, "ok": True, "result": apply_one(mid)}
         except Exception as exc:
             return {"id": mid, "ok": False, "error": str(exc)}
 
-    results = parallel_map(run, ids)
+    if apply_all is not None and len(ids) > 1:
+        apply_all(ids)
+        results = [{"id": mid, "ok": True} for mid in ids]
+    else:
+        results = parallel_map(run, ids)
     ok = sum(1 for r in results if r["ok"])
     return {"provider": provider, "action": action, "requested": len(ids),
             "succeeded": ok, "failed": len(ids) - ok, "results": results}
@@ -79,3 +84,4 @@ def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str],
 
 def is_reversible(entry: dict[str, Any]) -> bool:
     return entry.get("op") in {"move", "tag", "mark_read", "flag", "trash", "mark_spam", "untrash"}
+

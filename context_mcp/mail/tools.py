@@ -60,32 +60,37 @@ def register(mcp: FastMCP) -> None:
     def mail_move(provider: Mut, ids: Ids, to_folder: str) -> dict[str, Any]:
         """Move one or many messages to a folder or label. Reversible with mail_undo."""
         b = one(provider)
-        return batch(provider, "move", ids, lambda mid: b.move_message(mid, to_folder))
+        return batch(provider, "move", ids, lambda mid: b.move_message(mid, to_folder),
+                     b.batch_move and (lambda mids: b.batch_move(mids, to_folder)))
 
     @tool(title="Mail Tag", annotations=IDEMPOTENT)
     def mail_tag(provider: Mut, ids: Ids, labels: Labels,
                  mode: Literal["add", "remove"] = "add") -> dict[str, Any]:
         """Add or remove Gmail labels or Outlook categories on one or many messages. Reversible."""
         b = one(provider)
-        return batch(provider, "tag", ids, lambda mid: b.tag_message(mid, labels, mode=mode))
+        return batch(provider, "tag", ids, lambda mid: b.tag_message(mid, labels, mode=mode),
+                     b.batch_tag and (lambda mids: b.batch_tag(mids, labels, mode)))
 
     @tool(title="Mail Mark Read", annotations=IDEMPOTENT)
     def mail_mark_read(provider: Mut, ids: Ids, read: bool = True) -> dict[str, Any]:
         """Mark one or many messages read or unread. Reversible."""
         b = one(provider)
-        return batch(provider, "mark_read", ids, lambda mid: b.mark_read(mid, read=read))
+        return batch(provider, "mark_read", ids, lambda mid: b.mark_read(mid, read=read),
+                     b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=read)))
 
     @tool(title="Mail Flag", annotations=IDEMPOTENT)
     def mail_flag(provider: Mut, ids: Ids, on: bool = True) -> dict[str, Any]:
         """Flag Outlook messages or star Gmail messages, one or many. Reversible."""
         b = one(provider)
-        return batch(provider, "flag", ids, lambda mid: b.flag_message(mid, on=on))
+        return batch(provider, "flag", ids, lambda mid: b.flag_message(mid, on=on),
+                     b.batch_flag and (lambda mids: b.batch_flag(mids, on=on)))
 
     @tool(title="Mail Mark Spam", annotations=REVERSIBLE)
     def mail_mark_spam(provider: Mut, ids: Ids, spam: bool = True) -> dict[str, Any]:
         """Mark one or many messages spam/junk or clear it. Gmail Spam, Outlook Junk. Reversible."""
         b = one(provider)
-        return batch(provider, "mark_spam", ids, lambda mid: b.mark_spam(mid, spam=spam))
+        return batch(provider, "mark_spam", ids, lambda mid: b.mark_spam(mid, spam=spam),
+                     b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=spam)))
 
     @tool(title="Mail Trash", annotations=DESTRUCTIVE)
     def mail_trash(provider: Mut, ids: Ids) -> dict[str, Any]:
@@ -198,15 +203,19 @@ def register(mcp: FastMCP) -> None:
         if action == "move":
             if not to_folder:
                 raise ValueError("action 'move' requires to_folder.")
-            out["apply"] = batch(provider, action, ids, lambda mid: b.move_message(mid, to_folder))
+            out["apply"] = batch(provider, action, ids, lambda mid: b.move_message(mid, to_folder),
+                                 b.batch_move and (lambda mids: b.batch_move(mids, to_folder)))
         elif action == "tag":
             if not labels:
                 raise ValueError("action 'tag' requires labels.")
-            out["apply"] = batch(provider, action, ids, lambda mid: b.tag_message(mid, labels))
+            out["apply"] = batch(provider, action, ids, lambda mid: b.tag_message(mid, labels),
+                                 b.batch_tag and (lambda mids: b.batch_tag(mids, labels)))
         elif action == "mark_read":
-            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_read(mid, read=True))
+            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_read(mid, read=True),
+                                 b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=True)))
         elif action == "mark_spam":
-            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_spam(mid, spam=True))
+            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_spam(mid, spam=True),
+                                 b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=True)))
         else:
             out["apply"] = batch(provider, action, ids, b.trash_message)
         return out
