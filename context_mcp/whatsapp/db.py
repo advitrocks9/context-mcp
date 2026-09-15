@@ -1,8 +1,4 @@
-"""Read-only access to the local WhatsApp Desktop message store (Core Data sqlite).
-
-Everything here opens the database read-only, so no tool can alter WhatsApp. It
-offers convenience readers plus a guarded raw-SQL entry point over the ZWA* tables.
-"""
+"""Read-only readers and a guarded raw-SQL entry point over the local WhatsApp store."""
 
 from __future__ import annotations
 

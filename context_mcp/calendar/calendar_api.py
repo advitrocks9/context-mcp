@@ -1,9 +1,4 @@
-"""Calendar triage over the Outlook and Google Calendar APIs.
-
-Outlook uses the OWA token from outlook_auth; Google uses the Gmail refresh token,
-which must carry the calendar scope. Read, respond to invitations, and manage own
-events. It never permanently deletes another calendar's data.
-"""
+"""Outlook and Google Calendar reads and edits; Google reuses the Gmail refresh token."""
 
 from __future__ import annotations
 

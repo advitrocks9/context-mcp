@@ -14,8 +14,7 @@ from typing import Any, Callable, Iterable, Mapping, TypeVar
 
 import httpx
 
-PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
-REPO_DIR = PACKAGE_DIR.parent
+REPO_DIR = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_DIR = pathlib.Path.home() / ".config" / "context-mcp"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 AUDIT_LOG = CONFIG_DIR / "actions.log"

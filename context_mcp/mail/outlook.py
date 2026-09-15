@@ -1,7 +1,4 @@
-"""Outlook backend over the OWA REST API.
-
-Token acquisition lives in `outlook_auth`. This module is the mail surface only.
-"""
+"""Outlook mail surface over the OWA REST API; tokens come from outlook_auth."""
 
 from __future__ import annotations
 
@@ -76,7 +73,6 @@ def list_folders() -> list[dict[str, Any]]:
 
 
 def create_folder(name: str) -> dict[str, Any]:
-    """Create a top-level Outlook mail folder. No-op if a folder with that name already exists."""
     for f in list_folders():
         if (f["name"] or "").lower() == name.lower():
             return {"ok": True, "id": f["id"], "name": name, "created": False}
@@ -120,10 +116,6 @@ def list_messages_page(
         "next_cursor": data.get("@odata.nextLink", ""),
         "total_count": data.get("@odata.count"),
     }
-
-
-def list_messages(folder: str = "inbox", query: str = "", unread_only: bool = False, limit: int = 15) -> list[dict[str, Any]]:
-    return list_messages_page(folder=folder, query=query, unread_only=unread_only, limit=limit)["messages"]
 
 
 def get_message(mid: str, body: bool = True) -> dict[str, Any]:
@@ -329,15 +321,3 @@ def undo(e: dict[str, Any]) -> bool:
         )
         return True
     return False
-
-
-def _send_message(to: str, subject: str, body: str, cc: str = "") -> dict[str, Any]:
-    raise NotImplementedError("disabled by design: this server never sends mail")
-
-
-def _permanent_delete(mid: str) -> dict[str, Any]:
-    raise NotImplementedError("disabled by design: this server never permanently deletes mail")
-
-
-def _empty_trash() -> None:
-    raise NotImplementedError("disabled by design")

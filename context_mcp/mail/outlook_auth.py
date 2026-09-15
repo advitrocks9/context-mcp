@@ -1,9 +1,4 @@
-"""Outlook token acquisition against the signed-in OWA session.
-
-Imperial blocks mailbox API app registration, so the credential comes from OWA.
-The shared browser profile seeds a refresh token once; every token after that is
-minted over HTTPS with no browser in the request path.
-"""
+"""Outlook tokens harvested from the signed-in OWA session, then refreshed over HTTPS."""
 
 from __future__ import annotations
 

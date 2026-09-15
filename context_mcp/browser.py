@@ -1,10 +1,4 @@
-"""Shared headless-Chrome layer over agent-browser CDP.
-
-One persistent Chrome profile, logged into the sites this MCP reads (Outlook web
-for the token harvest, LinkedIn for profile and feed reads). Every browser
-operation runs under one file lock so mail and LinkedIn never fight over the
-single Chrome instance that owns the profile.
-"""
+"""One persistent Chrome profile over agent-browser CDP, serialised by a file lock."""
 
 from __future__ import annotations
 
@@ -78,11 +72,6 @@ def evaluate(js: str) -> Any:
         return None
     payload = json.loads(done.stdout)
     return (payload.get("data") or {}).get("result")
-
-
-def page_text(max_chars: int = 40000) -> str:
-    done = _run("get", "text", "body")
-    return done.stdout.strip()[:max_chars] if done.returncode == 0 else ""
 
 
 def close() -> None:

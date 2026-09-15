@@ -55,7 +55,6 @@ def test_query_limit_caps_rows(tmp_path):
     assert len(db.query("SELECT a FROM t", limit=10, path=p)) == 10
 
 
-# --- live tests against the real store, skipped if absent ---
 live = pytest.mark.skipif(not db.DB_PATH.exists(), reason="WhatsApp store not present")
 
 

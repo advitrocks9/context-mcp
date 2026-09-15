@@ -14,7 +14,7 @@ import urllib.request
 import webbrowser
 from typing import Any
 
-from context_mcp.common import PROJECT_DIR, load_env
+from context_mcp.common import REPO_DIR, load_env
 
 SCOPE = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/calendar"
 PORT = 8765
@@ -49,7 +49,7 @@ def _exchange_code(client_id: str, client_secret: str, code: str) -> dict[str, A
 
 
 def _write_refresh_token(refresh_token: str) -> None:
-    env_file = PROJECT_DIR / ".env"
+    env_file = REPO_DIR / ".env"
     lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
     out: list[str] = []
     found = False
@@ -100,7 +100,7 @@ def main() -> None:
         sys.exit(f"No refresh_token returned. Revoke the prior grant and retry: {token_response}")
 
     _write_refresh_token(str(refresh_token))
-    print(f"Refresh token written to {PROJECT_DIR / '.env'} (not shown). Scope: {SCOPE}")
+    print(f"Refresh token written to {REPO_DIR / '.env'} (not shown). Scope: {SCOPE}")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,4 @@
-"""Gmail backend using the official OAuth refresh-token flow.
-
-The expected token scope is ``https://www.googleapis.com/auth/gmail.modify``:
-read, label, trash, untrash, and draft access without permanent delete access.
-"""
+"""Gmail backend over the OAuth refresh-token flow, scoped to gmail.modify."""
 
 from __future__ import annotations
 
@@ -31,7 +27,7 @@ def _creds() -> tuple[str, str, str]:
     if not (client_id and client_secret and refresh_token):
         raise RuntimeError(
             "Gmail is not configured: set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, "
-            "and GMAIL_REFRESH_TOKEN in email-mcp/.env."
+            "and GMAIL_REFRESH_TOKEN in .env."
         )
     return client_id, client_secret, refresh_token
 
@@ -94,7 +90,6 @@ def _labels() -> list[dict[str, Any]]:
 
 
 def create_folder(name: str) -> dict[str, Any]:
-    """Create a Gmail label (Gmail's folder equivalent). No-op if it already exists."""
     for label in _labels():
         if str(label.get("name") or "").lower() == name.lower():
             return {"ok": True, "id": label["id"], "name": name, "created": False}
@@ -203,10 +198,6 @@ def list_messages_page(
         "next_cursor": response.get("nextPageToken", ""),
         "result_size_estimate": response.get("resultSizeEstimate", len(messages)),
     }
-
-
-def list_messages(folder: str = "inbox", query: str = "", unread_only: bool = False, limit: int = 15) -> list[dict[str, Any]]:
-    return list_messages_page(folder=folder, query=query, unread_only=unread_only, limit=limit)["messages"]
 
 
 def _extract_body(payload: dict[str, Any] | None) -> str:
@@ -393,11 +384,3 @@ def undo(e: dict[str, Any]) -> bool:
         _restore_labels(mid, e.get("before_labels", []))
         return True
     return False
-
-
-def _send_message(to: str, subject: str, body: str, cc: str = "") -> dict[str, Any]:
-    raise NotImplementedError("disabled by design: this server never sends mail")
-
-
-def _permanent_delete(mid: str) -> dict[str, Any]:
-    raise NotImplementedError("disabled by design: this server never permanently deletes mail")

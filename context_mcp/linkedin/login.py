@@ -2,7 +2,7 @@
 
 import asyncio
 
-from linkedin_mcp import browser
+from context_mcp.linkedin import browser
 
 if __name__ == "__main__":
     print("Opening a browser window. Log into LinkedIn (complete any 2FA). Waiting...")

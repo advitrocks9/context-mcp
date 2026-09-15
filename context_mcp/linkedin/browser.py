@@ -1,17 +1,4 @@
-"""Stealth browser engine for LinkedIn.
-
-LinkedIn binds the web session to a browser fingerprint, so injecting a cookie
-from another browser gets blocked as session-hijacking. Instead we keep a
-persistent Patchright (stealth Chromium) profile and log in interactively once;
-after that, reads run against that profile (headless by default).
-
-The context is launched once and reused across calls (closed after an idle
-window), and every navigation is paced server-side: a global lock serialises
-callers, and min-interval + per-minute + per-session limits cap throughput so
-even a parallel workflow cannot burst the account. Tuning via env:
-LINKEDIN_MIN_INTERVAL, LINKEDIN_MAX_PER_MIN, LINKEDIN_MAX_PER_SESSION,
-LINKEDIN_IDLE_TTL, LINKEDIN_HEADLESS.
-"""
+"""Persistent stealth-Chromium profile for LinkedIn, paced so parallel callers cannot burst the account."""
 
 from __future__ import annotations
 
@@ -165,7 +152,7 @@ async def _context() -> Any:
     global _pw, _ctx, _last_used
     if _ctx is None:
         if not USER_DATA_DIR.exists():
-            raise RuntimeError("LinkedIn profile not set up. Run: uv run python -m linkedin_mcp.login")
+            raise RuntimeError("LinkedIn profile not set up. Run: uv run python -m context_mcp.linkedin.login")
         _pw = await async_playwright().start()
         _ctx = await _pw.chromium.launch_persistent_context(str(USER_DATA_DIR), headless=HEADLESS, no_viewport=True)
     _last_used = time.monotonic()

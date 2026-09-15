@@ -1,6 +1,4 @@
-"""In-page extractors. Anchored on LinkedIn's stable href patterns (/in/, /jobs/view/,
-li[class*="msg-conversation"]) rather than hashed CSS classes, so a class rename
-doesn't silently break them. Each tool also returns cleaned text as a fallback."""
+"""In-page extractors anchored on href patterns, not hashed CSS classes."""
 
 MAIN_JS = "() => { const m = document.querySelector('main'); return (m ? m.innerText : (document.body ? document.body.innerText : '')) || ''; }"
 
