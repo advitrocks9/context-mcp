@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import threading
+import time
 import urllib.parse
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Iterable, Mapping, TypeVar
@@ -19,8 +20,9 @@ CONFIG_DIR = pathlib.Path.home() / ".config" / "context-mcp"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 AUDIT_LOG = CONFIG_DIR / "actions.log"
 HTTP_TIMEOUT_SECONDS = 30
+RATE_LIMIT_RETRIES = 3
 COREDATA_EPOCH = 978307200
-MAX_PARALLEL = 16
+MAX_PARALLEL = 32
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -66,7 +68,11 @@ def http(method: str, url: str, headers: Mapping[str, str] | None = None,
         else:
             body = json.dumps(data).encode()
             headers.setdefault("Content-Type", "application/json")
-    response = _client.request(method, url, headers=headers, content=body)
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        response = _client.request(method, url, headers=headers, content=body)
+        if response.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+            break
+        time.sleep(float(response.headers.get("Retry-After") or 2 ** attempt))
     if response.is_error:
         detail = response.text[:600]
         raise RuntimeError(f"HTTP {response.status_code} {method} {url.split('?')[0]} :: {detail}")

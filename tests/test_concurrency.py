@@ -5,8 +5,11 @@ import sqlite3
 import threading
 import time
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
+import context_mcp.common as common
+from context_mcp.common import http
 from context_mcp.mail import cache, outlook_auth
 from context_mcp.toolkit import threaded
 from context_mcp.whatsapp import db
@@ -102,3 +105,17 @@ def test_history_deltas_update_cached_labels(tmp_path, monkeypatch):
     assert rows["a"]["folders"] == ["INBOX", "STARRED"]
     assert rows["a"]["unread"] is False
     assert "b" not in rows
+
+
+def test_rate_limited_requests_retry(monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if len(seen) < 3:
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={"error": "slow down"})
+        return httpx.Response(200, json={"ok": True})
+
+    monkeypatch.setattr(common, "_client", httpx.Client(transport=httpx.MockTransport(handler)))
+    assert http("GET", "https://example.test/x") == {"ok": True}
+    assert len(seen) == 3
