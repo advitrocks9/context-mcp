@@ -1,0 +1,18 @@
+[project]
+name = "context-mcp"
+version = "0.1.0"
+description = "One local MCP over Advit's personal context: mail, calendar, LinkedIn, WhatsApp."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.2,<2", "patchright>=1.40"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
