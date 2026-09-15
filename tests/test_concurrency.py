@@ -1,8 +1,13 @@
+import asyncio
 import concurrent.futures
 import json
 import sqlite3
+import time
+
+from mcp.server.fastmcp import FastMCP
 
 from context_mcp.mail import outlook_auth
+from context_mcp.toolkit import threaded
 from context_mcp.whatsapp import db
 
 
@@ -47,3 +52,36 @@ def test_read_only_connection_blocks_writes(tmp_path):
                 pass
     finally:
         conn.close()
+
+
+def test_sync_tools_run_off_the_event_loop():
+    mcp = FastMCP("t")
+    tool = threaded(mcp)
+
+    @tool(title="Sleep")
+    def sleeper() -> str:
+        """Block."""
+        time.sleep(0.5)
+        return "ok"
+
+    async def drive():
+        stalls = []
+
+        async def tick():
+            last = time.perf_counter()
+            while True:
+                await asyncio.sleep(0.01)
+                now = time.perf_counter()
+                stalls.append(now - last)
+                last = now
+
+        ticker = asyncio.create_task(tick())
+        started = time.perf_counter()
+        await asyncio.gather(*[mcp.call_tool("sleeper", {}) for _ in range(3)])
+        elapsed = time.perf_counter() - started
+        ticker.cancel()
+        return elapsed, max(stalls)
+
+    elapsed, worst = asyncio.run(drive())
+    assert elapsed < 1.0, f"three 0.5s calls serialised: {elapsed:.2f}s"
+    assert worst < 0.2, f"event loop stalled for {worst:.2f}s"
