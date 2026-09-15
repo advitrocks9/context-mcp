@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.advit.contextmcp.outlook-refresh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/advitarora/.local/bin/uv</string>
+        <string>run</string>
+        <string>--frozen</string>
+        <string>--directory</string>
+        <string>/Users/advitarora/.claude/mcp/context-mcp</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>context_mcp.mail.refresh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>28800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/advitarora/.config/context-mcp/refresh.err</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/advitarora/.config/context-mcp/refresh.err</string>
+</dict>
+</plist>
