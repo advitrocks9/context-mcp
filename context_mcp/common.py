@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import json
 import os
 import pathlib
-import urllib.error
+import threading
 import urllib.parse
-import urllib.request
 from email.utils import parsedate_to_datetime
-from typing import Any, Mapping
+from typing import Any, Callable, Iterable, Mapping, TypeVar
+
+import httpx
 
 PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
 REPO_DIR = PACKAGE_DIR.parent
@@ -19,6 +21,23 @@ CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 AUDIT_LOG = CONFIG_DIR / "actions.log"
 HTTP_TIMEOUT_SECONDS = 30
 COREDATA_EPOCH = 978307200
+MAX_PARALLEL = 16
+
+T = TypeVar("T")
+R = TypeVar("R")
+
+_client = httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True,
+                       limits=httpx.Limits(max_connections=MAX_PARALLEL * 2,
+                                           max_keepalive_connections=MAX_PARALLEL))
+_audit_lock = threading.Lock()
+
+
+def parallel_map(fn: Callable[[T], R], items: Iterable[T], workers: int = MAX_PARALLEL) -> list[R]:
+    rows = list(items)
+    if len(rows) < 2:
+        return [fn(row) for row in rows]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers, len(rows))) as pool:
+        return list(pool.map(fn, rows))
 
 
 def load_env() -> dict[str, str]:
@@ -48,20 +67,17 @@ def http(method: str, url: str, headers: Mapping[str, str] | None = None,
         else:
             body = json.dumps(data).encode()
             headers.setdefault("Content-Type", "application/json")
-    request = urllib.request.Request(url, body, headers, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "ignore")[:600]
-        raise RuntimeError(f"HTTP {exc.code} {method} {url.split('?')[0]} :: {detail}") from exc
+    response = _client.request(method, url, headers=headers, content=body)
+    if response.is_error:
+        detail = response.text[:600]
+        raise RuntimeError(f"HTTP {response.status_code} {method} {url.split('?')[0]} :: {detail}")
+    return response.json() if response.content else {}
 
 
 def audit(entry: Mapping[str, Any]) -> None:
     entry = dict(entry)
     entry["ts"] = datetime.datetime.now().isoformat(timespec="seconds")
-    with AUDIT_LOG.open("a", encoding="utf-8") as handle:
+    with _audit_lock, AUDIT_LOG.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry) + "\n")
 
 
