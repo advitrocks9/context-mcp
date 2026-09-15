@@ -8,7 +8,10 @@ minted over HTTPS with no browser in the request path.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
+import os
+import tempfile
 import time
 from typing import Any
 
@@ -68,10 +71,16 @@ def _state_load() -> dict[str, Any]:
 
 
 def _state_save(state: dict[str, Any]) -> None:
-    tmp = STATE.with_suffix(".tmp")
-    tmp.touch(mode=0o600, exist_ok=True)
-    tmp.write_text(json.dumps(state))
-    tmp.replace(STATE)
+    fd, tmp = tempfile.mkstemp(dir=str(STATE.parent), prefix=".outlook-token.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(json.dumps(state))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, STATE)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def state_clear() -> None:
@@ -94,18 +103,22 @@ def _harvest() -> dict[str, Any]:
         cached = _state_load()
         if cached.get("access") and cached.get("exp", 0) - time.time() > SKEW:
             return cached
-        browser.open_page(MAIL_URL)
-        deadline = time.time() + HARVEST_DEADLINE
-        walls = 0
-        while time.time() < deadline:
-            found = browser.evaluate(_HARVEST_JS) or {}
-            if found.get("stage") == "ok" and (found.get("refresh") or found.get("access")):
-                return found
-            walls = walls + 1 if _walled() else 0
-            if walls >= 3:
-                raise RuntimeError(SETUP_HINT)
-            time.sleep(3)
-        raise RuntimeError("OWA did not settle on the mailbox in time. Retry, or re-run setup.")
+        browser.reap()
+        try:
+            browser.open_page(MAIL_URL)
+            deadline = time.time() + HARVEST_DEADLINE
+            walls = 0
+            while time.time() < deadline:
+                found = browser.evaluate(_HARVEST_JS) or {}
+                if found.get("stage") == "ok" and (found.get("refresh") or found.get("access")):
+                    return found
+                walls = walls + 1 if _walled() else 0
+                if walls >= 3:
+                    raise RuntimeError(SETUP_HINT)
+                time.sleep(3)
+            raise RuntimeError("OWA did not settle on the mailbox in time. Retry, or re-run setup.")
+        finally:
+            browser.close()
 
 
 def _mint(refresh_token: str) -> dict[str, Any]:
