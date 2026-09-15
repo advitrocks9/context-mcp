@@ -2,11 +2,12 @@ import asyncio
 import concurrent.futures
 import json
 import sqlite3
+import threading
 import time
 
 from mcp.server.fastmcp import FastMCP
 
-from context_mcp.mail import outlook_auth
+from context_mcp.mail import cache, outlook_auth
 from context_mcp.toolkit import threaded
 from context_mcp.whatsapp import db
 
@@ -85,3 +86,19 @@ def test_sync_tools_run_off_the_event_loop():
     elapsed, worst = asyncio.run(drive())
     assert elapsed < 1.0, f"three 0.5s calls serialised: {elapsed:.2f}s"
     assert worst < 0.2, f"event loop stalled for {worst:.2f}s"
+
+
+def test_history_deltas_update_cached_labels(tmp_path, monkeypatch):
+    monkeypatch.setattr(cache, "DB_PATH", tmp_path / "c.sqlite")
+    monkeypatch.setattr(cache, "_local", threading.local())
+    cache.put([{"id": "a", "subject": "one", "folders": ["INBOX", "UNREAD"]},
+               {"id": "b", "subject": "two", "folders": ["INBOX"]}])
+    cache.apply_history([
+        {"labelsRemoved": [{"message": {"id": "a"}, "labelIds": ["UNREAD"]}]},
+        {"labelsAdded": [{"message": {"id": "a"}, "labelIds": ["STARRED"]}]},
+        {"messagesDeleted": [{"message": {"id": "b"}}]},
+    ])
+    rows = cache.get(["a", "b"])
+    assert rows["a"]["folders"] == ["INBOX", "STARRED"]
+    assert rows["a"]["unread"] is False
+    assert "b" not in rows
