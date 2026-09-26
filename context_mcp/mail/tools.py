@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -126,10 +127,15 @@ def register(mcp: FastMCP) -> None:
 
     @tool(title="Mail Create Filter", annotations=REVERSIBLE)
     def mail_create_filter(provider: Mut, from_address: str = "", subject_contains: str = "",
+                           except_subject_contains: str = "",
                            add_label: str = "", move_to: str = "", mark_read: bool = False,
-                           mark_as_spam: bool = False, name: str = "") -> dict[str, Any]:
-        """Create a Gmail filter or Outlook inbox rule from at least one condition and one action."""
-        return _create_filter(provider, name, from_address, subject_contains, add_label, move_to, mark_read, mark_as_spam)
+                           mark_as_spam: bool = False, stop_processing: bool = False,
+                           name: str = "") -> dict[str, Any]:
+        """Create a Gmail filter or Outlook inbox rule from at least one condition and one action.
+        Match fields take Gmail syntax, "a OR b OR c"; on Outlook each alternative becomes its own
+        match entry. Outlook rules run in creation order; stop_processing ends evaluation there."""
+        return _create_filter(provider, name, from_address, subject_contains, except_subject_contains,
+                              add_label, move_to, mark_read, mark_as_spam, stop_processing)
 
     @tool(title="Mail Delete Filter", annotations=DESTRUCTIVE)
     def mail_delete_filter(provider: Mut, filter_id: str) -> dict[str, Any]:
@@ -221,8 +227,13 @@ def register(mcp: FastMCP) -> None:
         return out
 
 
+def _alternatives(expr: str) -> list[str]:
+    return [t for t in (p.strip().strip("()\"") for p in re.split(r"\s+OR\s+", expr.strip().strip("()"))) if t]
+
+
 def _create_filter(provider: str, name: str, from_address: str, subject_contains: str,
-                   add_label: str, move_to: str, mark_read: bool, mark_as_spam: bool) -> dict[str, Any]:
+                   except_subject_contains: str, add_label: str, move_to: str, mark_read: bool,
+                   mark_as_spam: bool, stop_processing: bool) -> dict[str, Any]:
     from context_mcp.mail import gmail, outlook
     if not (from_address or subject_contains):
         raise ValueError("A filter needs at least one condition: from_address or subject_contains.")
@@ -234,6 +245,8 @@ def _create_filter(provider: str, name: str, from_address: str, subject_contains
             criteria["from"] = from_address
         if subject_contains:
             criteria["subject"] = subject_contains
+        if except_subject_contains:
+            criteria["negatedQuery"] = f"subject:({except_subject_contains})"
         add_ids: list[str] = []
         remove_ids: list[str] = []
         if add_label and (lid := gmail.label_id_for_filter(add_label)):
@@ -255,9 +268,10 @@ def _create_filter(provider: str, name: str, from_address: str, subject_contains
         return gmail.create_filter(criteria, action)
     conditions: dict[str, Any] = {}
     if from_address:
-        conditions["SenderContains"] = [from_address]
+        conditions["SenderContains"] = _alternatives(from_address)
     if subject_contains:
-        conditions["SubjectContains"] = [subject_contains]
+        conditions["SubjectContains"] = _alternatives(subject_contains)
+    exceptions = {"SubjectContains": _alternatives(except_subject_contains)} if except_subject_contains else {}
     actions: dict[str, Any] = {}
     if add_label:
         actions["AssignCategories"] = [add_label]
@@ -267,4 +281,6 @@ def _create_filter(provider: str, name: str, from_address: str, subject_contains
         actions["MoveToFolder"] = "junkemail"
     if mark_read:
         actions["MarkAsRead"] = True
-    return outlook.create_filter(name or (from_address or subject_contains), conditions, actions)
+    if stop_processing:
+        actions["StopProcessingRules"] = True
+    return outlook.create_filter(name or (from_address or subject_contains), conditions, exceptions, actions)

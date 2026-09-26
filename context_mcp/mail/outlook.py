@@ -257,10 +257,15 @@ def list_filters() -> list[dict[str, Any]]:
              "conditions": r.get("Conditions"), "actions": r.get("Actions")} for r in rules]
 
 
-def create_filter(display_name: str, conditions: dict[str, Any], actions: dict[str, Any]) -> dict[str, Any]:
-    created = http("POST", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth(),
-                   {"DisplayName": display_name, "Sequence": 1, "IsEnabled": True,
-                    "Conditions": conditions, "Actions": actions})
+def create_filter(display_name: str, conditions: dict[str, Any], exceptions: dict[str, Any],
+                  actions: dict[str, Any]) -> dict[str, Any]:
+    rules = http("GET", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth()).get("value", [])
+    sequence = max((r.get("Sequence") or 0 for r in rules), default=0) + 1
+    body = {"DisplayName": display_name, "Sequence": sequence, "IsEnabled": True,
+            "Conditions": conditions, "Actions": actions}
+    if exceptions:
+        body["Exceptions"] = exceptions
+    created = http("POST", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth(), body)
     audit({"provider": "outlook", "op": "create_filter", "id": created.get("Id")})
     return {"ok": True, "id": created.get("Id"), "name": display_name}
 
