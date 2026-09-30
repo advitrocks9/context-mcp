@@ -3,22 +3,34 @@
 from __future__ import annotations
 
 import base64
-import json
 import mimetypes
 import urllib.parse
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from context_mcp.common import audit, http
-from context_mcp.mail.outlook_auth import get_token
+from context_mcp.common import HTTPError, audit, http
+from context_mcp.mail.outlook_auth import drop_access, get_token
 
 BASE = "https://outlook.office.com/api/v2.0"
 
 batch_move = batch_tag = batch_flag = batch_mark_read = batch_mark_spam = None
 
 
-def _auth() -> dict[str, str]:
-    return {"Authorization": "Bearer " + get_token(), "Accept": "application/json"}
+def api(method: str, url: str, data: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None) -> dict[str, Any]:
+    token = get_token()
+    try:
+        return http(method, url, _headers(token, headers), data)
+    except HTTPError as exc:
+        if exc.status != 401:
+            raise
+    drop_access(token)
+    return http(method, url, _headers(get_token(), headers), data)
+
+
+def _headers(token: str, extra: Mapping[str, str] | None) -> dict[str, str]:
+    return {"Authorization": "Bearer " + token, "Accept": "application/json", **(extra or {})}
 
 
 def _recipients(rows: list[dict[str, Any]] | None) -> str:
@@ -68,7 +80,7 @@ def _folder_id(name: str) -> str:
 
 
 def list_folders() -> list[dict[str, Any]]:
-    data = http("GET", BASE + "/me/mailfolders?$top=100&$select=Id,DisplayName,UnreadItemCount,TotalItemCount", _auth())
+    data = api("GET", BASE + "/me/mailfolders?$top=100&$select=Id,DisplayName,UnreadItemCount,TotalItemCount")
     return [{"id": f["Id"], "name": f.get("DisplayName"),
              "unread": f.get("UnreadItemCount"), "total": f.get("TotalItemCount")}
             for f in data.get("value", [])]
@@ -78,7 +90,7 @@ def create_folder(name: str) -> dict[str, Any]:
     for f in list_folders():
         if (f["name"] or "").lower() == name.lower():
             return {"ok": True, "id": f["id"], "name": name, "created": False}
-    r = http("POST", BASE + "/me/mailfolders", _auth(), {"DisplayName": name})
+    r = api("POST", BASE + "/me/mailfolders", {"DisplayName": name})
     return {"ok": True, "id": r.get("Id"), "name": r.get("DisplayName"), "created": True}
 
 
@@ -90,7 +102,7 @@ def list_messages_page(
     cursor: str = "",
 ) -> dict[str, Any]:
     if cursor:
-        data = http("GET", cursor, _auth())
+        data = api("GET", cursor)
         return {
             "provider": "outlook",
             "messages": [_norm(m) for m in data.get("value", [])],
@@ -111,7 +123,7 @@ def list_messages_page(
         if unread_only:
             parts.append("$filter=" + urllib.parse.quote("IsRead eq false"))
         qs = "&".join(parts)
-    data = http("GET", f"{path}?{qs}", _auth())
+    data = api("GET", f"{path}?{qs}")
     return {
         "provider": "outlook",
         "messages": [_norm(m) for m in data.get("value", [])],
@@ -124,7 +136,7 @@ def get_message(mid: str, body: bool = True) -> dict[str, Any]:
     sel = "Id,Subject,From,ToRecipients,ReceivedDateTime,IsRead,BodyPreview,ParentFolderId,Categories"
     if body:
         sel += ",Body"
-    m = http("GET", f"{BASE}/me/messages/{mid}?$select={sel}", _auth())
+    m = api("GET", f"{BASE}/me/messages/{mid}?$select={sel}")
     d = _norm(m)
     d["to"] = _recipients(m.get("ToRecipients"))
     d["categories"] = m.get("Categories") or []
@@ -137,21 +149,21 @@ def get_message(mid: str, body: bool = True) -> dict[str, Any]:
 
 def _message_state(mid: str) -> dict[str, Any] | None:
     try:
-        return http("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId,IsRead,Categories,Flag", _auth())
+        return api("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId,IsRead,Categories,Flag")
     except Exception:
         return None
 
 
 def _current_folder(mid: str) -> str | None:
     try:
-        return http("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId", _auth()).get("ParentFolderId")
+        return api("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId").get("ParentFolderId")
     except Exception:
         return None
 
 
 def move_message(mid: str, to_folder: str) -> dict[str, Any]:
     before = _current_folder(mid)
-    r = http("POST", f"{BASE}/me/messages/{mid}/move", _auth(), {"DestinationId": _folder_id(to_folder)})
+    r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": _folder_id(to_folder)})
     audit({"provider": "outlook", "op": "move", "id": mid, "new_id": r.get("Id"),
            "to": to_folder, "from_folder": before})
     return {"ok": True, "new_id": r.get("Id"), "moved_to": to_folder}
@@ -161,7 +173,7 @@ def tag_message(mid: str, labels: list[str] | str, mode: str = "add") -> dict[st
     if mode not in {"add", "remove", "set"}:
         raise ValueError("mode must be 'add', 'remove', or 'set'.")
     cats = labels if isinstance(labels, list) else [labels]
-    m = http("GET", f"{BASE}/me/messages/{mid}?$select=Categories", _auth())
+    m = api("GET", f"{BASE}/me/messages/{mid}?$select=Categories")
     cur = set(m.get("Categories") or [])
     if mode == "remove":
         new = cur - set(cats)
@@ -169,14 +181,14 @@ def tag_message(mid: str, labels: list[str] | str, mode: str = "add") -> dict[st
         new = set(cats)
     else:
         new = cur | set(cats)
-    http("PATCH", f"{BASE}/me/messages/{mid}", _auth(), {"Categories": sorted(new)})
+    api("PATCH", f"{BASE}/me/messages/{mid}", {"Categories": sorted(new)})
     audit({"provider": "outlook", "op": "tag", "id": mid, "before": sorted(cur), "after": sorted(new)})
     return {"ok": True, "categories": sorted(new)}
 
 
 def mark_read(mid: str, read: bool = True) -> dict[str, Any]:
     before = _message_state(mid)
-    http("PATCH", f"{BASE}/me/messages/{mid}", _auth(), {"IsRead": bool(read)})
+    api("PATCH", f"{BASE}/me/messages/{mid}", {"IsRead": bool(read)})
     audit({
         "provider": "outlook",
         "op": "mark_read",
@@ -189,8 +201,7 @@ def mark_read(mid: str, read: bool = True) -> dict[str, Any]:
 
 def flag_message(mid: str, on: bool = True) -> dict[str, Any]:
     before = _message_state(mid)
-    http("PATCH", f"{BASE}/me/messages/{mid}", _auth(),
-         {"Flag": {"FlagStatus": "Flagged" if on else "NotFlagged"}})
+    api("PATCH", f"{BASE}/me/messages/{mid}", {"Flag": {"FlagStatus": "Flagged" if on else "NotFlagged"}})
     before_flag = (before.get("Flag") or {}).get("FlagStatus") if before else None
     audit({"provider": "outlook", "op": "flag", "id": mid, "on": bool(on), "before_flag_status": before_flag})
     return {"ok": True, "flagged": bool(on)}
@@ -198,7 +209,7 @@ def flag_message(mid: str, on: bool = True) -> dict[str, Any]:
 
 def trash_message(mid: str) -> dict[str, Any]:
     before = _current_folder(mid)
-    r = http("POST", f"{BASE}/me/messages/{mid}/move", _auth(), {"DestinationId": "deleteditems"})
+    r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": "deleteditems"})
     audit({"provider": "outlook", "op": "trash", "id": mid, "new_id": r.get("Id"), "from_folder": before})
     return {"ok": True, "new_id": r.get("Id"), "trashed": True}
 
@@ -206,7 +217,7 @@ def trash_message(mid: str) -> dict[str, Any]:
 def mark_spam(mid: str, spam: bool = True) -> dict[str, Any]:
     before = _current_folder(mid)
     dest = "junkemail" if spam else "inbox"
-    r = http("POST", f"{BASE}/me/messages/{mid}/move", _auth(), {"DestinationId": dest})
+    r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": dest})
     audit({"provider": "outlook", "op": "mark_spam", "id": mid, "new_id": r.get("Id"),
            "spam": bool(spam), "from_folder": before})
     return {"ok": True, "new_id": r.get("Id"), "spam": bool(spam)}
@@ -214,13 +225,13 @@ def mark_spam(mid: str, spam: bool = True) -> dict[str, Any]:
 
 def untrash_message(mid: str) -> dict[str, Any]:
     before = _current_folder(mid)
-    r = http("POST", f"{BASE}/me/messages/{mid}/move", _auth(), {"DestinationId": "inbox"})
+    r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": "inbox"})
     audit({"provider": "outlook", "op": "untrash", "id": mid, "new_id": r.get("Id"), "from_folder": before})
     return {"ok": True, "new_id": r.get("Id"), "untrashed": True}
 
 
 def _category_id(name: str) -> str | None:
-    for cat in http("GET", f"{BASE}/me/MasterCategories", _auth()).get("value", []):
+    for cat in api("GET", f"{BASE}/me/MasterCategories").get("value", []):
         if (cat.get("DisplayName") or "").lower() == name.lower():
             return cat["Id"]
     return None
@@ -229,7 +240,7 @@ def _category_id(name: str) -> str | None:
 def create_label(name: str, color: str = "Preset0") -> dict[str, Any]:
     if _category_id(name):
         return {"ok": True, "name": name, "created": False}
-    created = http("POST", f"{BASE}/me/MasterCategories", _auth(), {"DisplayName": name, "Color": color})
+    created = api("POST", f"{BASE}/me/MasterCategories", {"DisplayName": name, "Color": color})
     return {"ok": True, "id": created.get("Id"), "name": name, "created": True}
 
 
@@ -237,41 +248,41 @@ def delete_label(name: str) -> dict[str, Any]:
     cid = _category_id(name)
     if not cid:
         raise ValueError(f"No category named '{name}'.")
-    http("DELETE", f"{BASE}/me/MasterCategories/{cid}", _auth())
+    api("DELETE", f"{BASE}/me/MasterCategories/{cid}")
     return {"ok": True, "deleted": name}
 
 
 def rename_label(name: str, new_name: str) -> dict[str, Any]:
-    for cat in http("GET", f"{BASE}/me/MasterCategories", _auth()).get("value", []):
+    for cat in api("GET", f"{BASE}/me/MasterCategories").get("value", []):
         if (cat.get("DisplayName") or "").lower() == name.lower():
-            http("DELETE", f"{BASE}/me/MasterCategories/{cat['Id']}", _auth())
-            http("POST", f"{BASE}/me/MasterCategories", _auth(),
-                 {"DisplayName": new_name, "Color": cat.get("Color") or "Preset0"})
+            api("DELETE", f"{BASE}/me/MasterCategories/{cat['Id']}")
+            api("POST", f"{BASE}/me/MasterCategories",
+                {"DisplayName": new_name, "Color": cat.get("Color") or "Preset0"})
             return {"ok": True, "renamed": new_name}
     raise ValueError(f"No category named '{name}'.")
 
 
 def list_filters() -> list[dict[str, Any]]:
-    rules = http("GET", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth()).get("value", [])
+    rules = api("GET", f"{BASE}/me/MailFolders/inbox/MessageRules").get("value", [])
     return [{"id": r.get("Id"), "name": r.get("DisplayName"), "enabled": r.get("IsEnabled"),
              "conditions": r.get("Conditions"), "actions": r.get("Actions")} for r in rules]
 
 
 def create_filter(display_name: str, conditions: dict[str, Any], exceptions: dict[str, Any],
                   actions: dict[str, Any]) -> dict[str, Any]:
-    rules = http("GET", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth()).get("value", [])
+    rules = api("GET", f"{BASE}/me/MailFolders/inbox/MessageRules").get("value", [])
     sequence = max((r.get("Sequence") or 0 for r in rules), default=0) + 1
     body = {"DisplayName": display_name, "Sequence": sequence, "IsEnabled": True,
             "Conditions": conditions, "Actions": actions}
     if exceptions:
         body["Exceptions"] = exceptions
-    created = http("POST", f"{BASE}/me/MailFolders/inbox/MessageRules", _auth(), body)
+    created = api("POST", f"{BASE}/me/MailFolders/inbox/MessageRules", body)
     audit({"provider": "outlook", "op": "create_filter", "id": created.get("Id")})
     return {"ok": True, "id": created.get("Id"), "name": display_name}
 
 
 def delete_filter(filter_id: str) -> dict[str, Any]:
-    http("DELETE", f"{BASE}/me/MailFolders/inbox/MessageRules/{filter_id}", _auth())
+    api("DELETE", f"{BASE}/me/MailFolders/inbox/MessageRules/{filter_id}")
     return {"ok": True, "deleted": filter_id}
 
 
@@ -299,7 +310,7 @@ def create_draft(
         names.append(p.name)
     if atts:
         msg["Attachments"] = atts
-    r = http("POST", f"{BASE}/me/messages", _auth(), msg)
+    r = api("POST", f"{BASE}/me/messages", msg)
     audit({"provider": "outlook", "op": "create_draft", "id": r.get("Id"), "subject": subject, "attachments": names})
     return {"ok": True, "draft_id": r.get("Id"), "attachments": names}
 
@@ -308,22 +319,20 @@ def undo(e: dict[str, Any]) -> bool:
     op = e.get("op")
     if op in ("move", "trash", "mark_spam", "untrash"):
         nid = e.get("new_id") or e.get("id")
-        http("POST", f"{BASE}/me/messages/{nid}/move", _auth(),
-             {"DestinationId": e.get("from_folder") or "inbox"})
+        api("POST", f"{BASE}/me/messages/{nid}/move", {"DestinationId": e.get("from_folder") or "inbox"})
         return True
     if op == "tag":
-        http("PATCH", f"{BASE}/me/messages/{e['id']}", _auth(), {"Categories": e.get("before", [])})
+        api("PATCH", f"{BASE}/me/messages/{e['id']}", {"Categories": e.get("before", [])})
         return True
     if op == "flag":
-        http("PATCH", f"{BASE}/me/messages/{e['id']}", _auth(),
-             {"Flag": {"FlagStatus": e.get("before_flag_status") or ("NotFlagged" if e.get("on") else "Flagged")}})
+        api("PATCH", f"{BASE}/me/messages/{e['id']}",
+            {"Flag": {"FlagStatus": e.get("before_flag_status") or ("NotFlagged" if e.get("on") else "Flagged")}})
         return True
     if op == "mark_read":
         before_is_read = e.get("before_is_read")
-        http(
+        api(
             "PATCH",
             f"{BASE}/me/messages/{e['id']}",
-            _auth(),
             {"IsRead": before_is_read if isinstance(before_is_read, bool) else not e.get("read")},
         )
         return True

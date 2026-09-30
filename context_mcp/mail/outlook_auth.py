@@ -24,6 +24,7 @@ STATE = CONFIG_DIR / "outlook-token.json"
 _token_lock = threading.Lock()
 SKEW = 300
 HARVEST_DEADLINE = 90
+SIGN_IN_DEADLINE = 600
 
 SETUP_HINT = ("OWA session is not signed in. Run `python -m context_mcp.mail.setup` "
               "and sign in once with Stay signed in ticked.")
@@ -80,8 +81,12 @@ def _state_save(state: dict[str, Any]) -> None:
         raise
 
 
-def state_clear() -> None:
-    STATE.unlink(missing_ok=True)
+def drop_access(token: str | None = None) -> None:
+    with _token_lock:
+        state = _state_load()
+        if state.get("access") and token in (None, state["access"]):
+            state.pop("access")
+            _state_save(state)
 
 
 def _jwt_exp(token: str) -> float:
@@ -95,6 +100,13 @@ def _walled() -> bool:
     return "login.microsoftonline.com" in url or "login.live.com" in url
 
 
+def _read_tokens() -> dict[str, Any] | None:
+    found = browser.evaluate(_HARVEST_JS) or {}
+    if found.get("stage") == "ok" and (found.get("refresh") or found.get("access")):
+        return found
+    return None
+
+
 def _harvest() -> dict[str, Any]:
     with browser.session():
         cached = _state_load()
@@ -106,14 +118,30 @@ def _harvest() -> dict[str, Any]:
             deadline = time.time() + HARVEST_DEADLINE
             walls = 0
             while time.time() < deadline:
-                found = browser.evaluate(_HARVEST_JS) or {}
-                if found.get("stage") == "ok" and (found.get("refresh") or found.get("access")):
+                found = _read_tokens()
+                if found:
                     return found
                 walls = walls + 1 if _walled() else 0
                 if walls >= 3:
                     raise RuntimeError(SETUP_HINT)
                 time.sleep(3)
             raise RuntimeError("OWA did not settle on the mailbox in time. Retry, or re-run setup.")
+        finally:
+            browser.close()
+
+
+def sign_in() -> str:
+    with browser.session():
+        browser.close()
+        try:
+            browser.open_page(MAIL_URL, headed=True)
+            deadline = time.time() + SIGN_IN_DEADLINE
+            while time.time() < deadline:
+                found = _read_tokens()
+                if found:
+                    return _commit(found)
+                time.sleep(4)
+            raise RuntimeError("Outlook sign-in did not finish within 10 minutes.")
         finally:
             browser.close()
 
