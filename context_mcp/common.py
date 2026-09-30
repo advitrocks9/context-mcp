@@ -33,6 +33,12 @@ _client = httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True,
 _audit_lock = threading.Lock()
 
 
+class HTTPError(RuntimeError):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 def parallel_map(fn: Callable[[T], R], items: Iterable[T], workers: int = MAX_PARALLEL) -> list[R]:
     rows = list(items)
     if len(rows) < 2:
@@ -75,7 +81,8 @@ def http(method: str, url: str, headers: Mapping[str, str] | None = None,
         time.sleep(float(response.headers.get("Retry-After") or 2 ** attempt))
     if response.is_error:
         detail = response.text[:600]
-        raise RuntimeError(f"HTTP {response.status_code} {method} {url.split('?')[0]} :: {detail}")
+        raise HTTPError(response.status_code,
+                        f"HTTP {response.status_code} {method} {url.split('?')[0]} :: {detail}")
     return response.json() if response.content else {}
 
 

@@ -12,6 +12,7 @@ from context_mcp.common import http, parallel_map
 
 OUTLOOK = "https://outlook.office.com/api/v2.0/me"
 GOOGLE = "https://www.googleapis.com/calendar/v3"
+_O_PREFER = {"Prefer": 'outlook.timezone="UTC"'}
 _RESPONSES = {"accept": "accepted", "decline": "declined", "tentative": "tentative"}
 
 
@@ -27,11 +28,6 @@ def _window(days: int, start: str, end: str) -> tuple[datetime.datetime, datetim
     if hi.tzinfo is None:
         hi = hi.replace(tzinfo=datetime.timezone.utc)
     return lo, hi
-
-
-def _o_auth() -> dict[str, str]:
-    return {"Authorization": "Bearer " + outlook.get_token(), "Accept": "application/json",
-            "Prefer": 'outlook.timezone="UTC"'}
 
 
 def _g_auth() -> dict[str, str]:
@@ -86,7 +82,7 @@ def list_events(provider: str, days: int = 14, start: str = "", end: str = "",
             "$orderby": "Start/DateTime",
             "$top": int(limit),
         })
-        rows = http("GET", f"{OUTLOOK}/calendarview?{params}", _o_auth()).get("value", [])
+        rows = outlook.api("GET", f"{OUTLOOK}/calendarview?{params}", headers=_O_PREFER).get("value", [])
         events = [_o_event(e) for e in rows]
         if query:
             events = [e for e in events if query.lower() in (e["subject"] or "").lower()]
@@ -110,7 +106,7 @@ def search_events(provider: str, query: str, back_days: int = 30, ahead_days: in
 
 def get_event(provider: str, event_id: str) -> dict[str, Any]:
     if provider == "outlook":
-        return _o_event(http("GET", f"{OUTLOOK}/events/{event_id}", _o_auth()))
+        return _o_event(outlook.api("GET", f"{OUTLOOK}/events/{event_id}", headers=_O_PREFER))
     return _g_event(http("GET", f"{GOOGLE}/calendars/primary/events/{event_id}", _g_auth()))
 
 
@@ -120,8 +116,8 @@ def respond_event(provider: str, event_id: str, response: str, comment: str = ""
         raise ValueError("response must be 'accept', 'decline', or 'tentative'.")
     if provider == "outlook":
         action = {"accept": "accept", "decline": "decline", "tentative": "tentativelyaccept"}[response]
-        http("POST", f"{OUTLOOK}/events/{event_id}/{action}", _o_auth(),
-             {"Comment": comment, "SendResponse": bool(notify)})
+        outlook.api("POST", f"{OUTLOOK}/events/{event_id}/{action}",
+                    {"Comment": comment, "SendResponse": bool(notify)}, _O_PREFER)
         return {"ok": True, "response": response}
     event = http("GET", f"{GOOGLE}/calendars/primary/events/{event_id}", _g_auth())
     attendees = event.get("attendees") or []
@@ -151,7 +147,7 @@ def create_event(provider: str, subject: str, start: str, end: str, location: st
         if attendees:
             payload["Attendees"] = [{"EmailAddress": {"Address": a.strip()}, "Type": "Required"}
                                     for a in attendees if a.strip()]
-        created = http("POST", f"{OUTLOOK}/events", _o_auth(), payload)
+        created = outlook.api("POST", f"{OUTLOOK}/events", payload, _O_PREFER)
         return {"ok": True, "id": created.get("Id")}
     payload = {
         "summary": subject,
@@ -183,7 +179,7 @@ def update_event(provider: str, event_id: str, subject: str = "", start: str = "
             patch["Location"] = {"DisplayName": location}
         if body:
             patch["Body"] = {"ContentType": "Text", "Content": body}
-        http("PATCH", f"{OUTLOOK}/events/{event_id}", _o_auth(), patch)
+        outlook.api("PATCH", f"{OUTLOOK}/events/{event_id}", patch, _O_PREFER)
         return {"ok": True, "id": event_id}
     patch = {}
     if subject:
@@ -208,7 +204,7 @@ def delete_event(provider: str, event_id: str, notify: bool = False) -> dict[str
     if not event_id or event_id.strip() in {"", "*", "all"}:
         raise ValueError("delete_event needs one concrete event id, never a wildcard.")
     if provider == "outlook":
-        http("DELETE", f"{OUTLOOK}/events/{event_id}", _o_auth())
+        outlook.api("DELETE", f"{OUTLOOK}/events/{event_id}", headers=_O_PREFER)
         return {"ok": True, "deleted": event_id}
     send = "all" if notify else "none"
     http("DELETE", f"{GOOGLE}/calendars/primary/events/{event_id}?sendUpdates={send}", _g_auth())

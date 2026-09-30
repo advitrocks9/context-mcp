@@ -1,4 +1,4 @@
-"""Keep the Outlook refresh token alive for the background LaunchAgent."""
+"""Rotate the Outlook tokens for the background LaunchAgent, so a dead refresh token shows as failed."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ LOG_MAX_BYTES = 256 * 1024
 def main() -> None:
     stamp = datetime.datetime.now().isoformat(timespec="seconds")
     try:
+        outlook_auth.drop_access()
         outlook_auth.get_token()
         line = f"{stamp} ok"
     except Exception as exc:
