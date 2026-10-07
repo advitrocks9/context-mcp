@@ -7,6 +7,7 @@ import re
 import sqlite3
 from typing import Any
 
+from context_mcp import redact
 from context_mcp.common import coredata_to_iso
 
 DB_PATH = (pathlib.Path.home()
@@ -83,13 +84,14 @@ def list_chats(limit: int = 30, query: str = "", kind: str = "",
         rows = conn.execute(
             f"""SELECT s.ZPARTNERNAME name, s.ZCONTACTJID jid, s.ZSESSIONTYPE stype,
                        s.ZUNREADCOUNT unread, s.ZMESSAGECOUNTER messages,
-                       lm.ZMESSAGEDATE last, s.ZLASTMESSAGETEXT last_text
+                       lm.ZMESSAGEDATE last, lm.ZTEXT last_text
                 FROM ZWACHATSESSION s LEFT JOIN ZWAMESSAGE lm ON s.ZLASTMESSAGE = lm.Z_PK
                 WHERE {' AND '.join(clauses)}
                 ORDER BY lm.ZMESSAGEDATE DESC LIMIT ?""", params).fetchall()
         return [{"name": r["name"], "jid": r["jid"], "kind": _chat_kind(r["stype"]),
                  "unread": r["unread"], "messages": r["messages"],
-                 "last_message": coredata_to_iso(r["last"]), "last_text": r["last_text"]}
+                 "last_message": coredata_to_iso(r["last"]),
+                 "last_text": redact.scrub(r["last_text"]) if r["last_text"] else "[non-text message]"}
                 for r in rows]
     finally:
         conn.close()
@@ -126,9 +128,23 @@ def _resolve_session(conn: sqlite3.Connection, name_or_jid: str) -> sqlite3.Row 
         (f"%{name_or_jid}%", f"%{name_or_jid}%")).fetchone()
 
 
+_SENDER = ("COALESCE(NULLIF(gm.ZCONTACTNAME, ''), NULLIF(gm.ZFIRSTNAME, ''), p.ZPUSHNAME, m.ZPUSHNAME) sender")
+_SENDER_JOIN = ("LEFT JOIN ZWAGROUPMEMBER gm ON m.ZGROUPMEMBER = gm.Z_PK "
+                "LEFT JOIN ZWAPROFILEPUSHNAME p ON gm.ZMEMBERJID = p.ZJID")
+
+
+def _name(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    if "=" in value or any(ch < " " for ch in value) or re.fullmatch(r"[A-Za-z0-9+/]{12,}={0,2}", value):
+        return ""
+    return value
+
+
 def _message_row(r: sqlite3.Row) -> dict[str, Any]:
-    return {"from_me": bool(r["ZISFROMME"]), "sender": r["sender"],
-            "text": r["ZTEXT"], "date": coredata_to_iso(r["ZMESSAGEDATE"]),
+    sender = "me" if r["ZISFROMME"] else _name(r["sender"])
+    return {"from_me": bool(r["ZISFROMME"]), "sender": sender,
+            "text": redact.scrub(r["ZTEXT"]), "date": coredata_to_iso(r["ZMESSAGEDATE"]),
             "type": r["ZMESSAGETYPE"], "starred": bool(r["ZSTARRED"])}
 
 
@@ -140,9 +156,8 @@ def get_chat(name_or_jid: str, limit: int = 50,
         if not session:
             return {"error": f"No chat matching '{name_or_jid}'.", "messages": []}
         rows = conn.execute(
-            """SELECT m.ZISFROMME, m.ZTEXT, m.ZMESSAGEDATE, m.ZMESSAGETYPE, m.ZSTARRED,
-                      COALESCE(gm.ZCONTACTNAME, gm.ZFIRSTNAME, m.ZPUSHNAME) sender
-               FROM ZWAMESSAGE m LEFT JOIN ZWAGROUPMEMBER gm ON m.ZGROUPMEMBER = gm.Z_PK
+            f"""SELECT m.ZISFROMME, m.ZTEXT, m.ZMESSAGEDATE, m.ZMESSAGETYPE, m.ZSTARRED, {_SENDER}
+               FROM ZWAMESSAGE m {_SENDER_JOIN}
                WHERE m.ZCHATSESSION = ?
                ORDER BY m.ZSORT DESC LIMIT ?""",
             (session["Z_PK"], int(limit))).fetchall()
@@ -165,11 +180,12 @@ def search_messages(text: str, contact: str = "", limit: int = 50,
     try:
         rows = conn.execute(
             f"""SELECT m.ZISFROMME, m.ZTEXT, m.ZMESSAGEDATE, m.ZMESSAGETYPE, m.ZSTARRED,
-                       s.ZPARTNERNAME sender
+                       s.ZPARTNERNAME chatname, {_SENDER}
                 FROM ZWAMESSAGE m JOIN ZWACHATSESSION s ON m.ZCHATSESSION = s.Z_PK
+                {_SENDER_JOIN}
                 WHERE {' AND '.join(clauses)}
                 ORDER BY m.ZMESSAGEDATE DESC LIMIT ?""", params).fetchall()
-        return [{"chat": r["sender"], **_message_row(r)} for r in rows]
+        return [{"chat": r["chatname"], **_message_row(r)} for r in rows]
     finally:
         conn.close()
 
