@@ -102,7 +102,8 @@ def _walled() -> bool:
 
 def _read_tokens() -> dict[str, Any] | None:
     found = browser.evaluate(_HARVEST_JS) or {}
-    if found.get("stage") == "ok" and (found.get("refresh") or found.get("access")):
+    access = found.get("access")
+    if found.get("stage") == "ok" and access and _jwt_exp(access) - time.time() > SKEW:
         return found
     return None
 
