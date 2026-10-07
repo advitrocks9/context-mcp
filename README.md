@@ -1,17 +1,35 @@
 # context-mcp
 
 One local MCP over Advit's personal context, so an agent has a single interface
-for mail, calendar, LinkedIn and WhatsApp. Read and triage only: it never sends a
-message, posts, or permanently deletes.
+for mail, calendar, LinkedIn, WhatsApp and his Imperial coursework. Read and triage
+only: it never sends a message, posts, submits coursework, or permanently deletes.
+
+## Soft-loaded tools
+
+Each domain is one dispatcher tool, not a wall of tools, so an agent sees ten tools
+instead of forty. Call a tool with `op="help"` for its operations, `op="schema"`
+for their argument shapes, then `op="<name>", params={...}` to run one. Set
+`CONTEXT_FOLD=0` to expose every underlying tool individually instead.
 
 ## Domains
 
-| Prefix | Source | Auth |
+| Tool | Source | Auth |
 | --- | --- | --- |
-| `mail_` | Gmail + Imperial Outlook | Gmail refresh token; Outlook token harvested from the OWA web session |
-| `calendar_` | Google + Outlook calendars | same tokens as mail |
-| `linkedin_` | LinkedIn, read-only | stealth browser profile, signed in once |
-| `whatsapp_` | local WhatsApp Desktop store | read-only sqlite, no auth |
+| `mail` | Gmail + Imperial Outlook | Gmail refresh token; Outlook token harvested from the OWA web session |
+| `calendar` | Google + Outlook calendars | same tokens as mail |
+| `linkedin` | LinkedIn, read-only | stealth browser profile, signed in once |
+| `whatsapp` | local WhatsApp Desktop store | read-only sqlite, no auth |
+| `scientia` | DoC VLE: modules, exercises, deadlines, resources, past papers, marks | DoC login; 15-min JWT auto-renewed via its 30-day refresh token |
+| `canvas` | Maths VLE: courses, content, pages, deadlines, announcements, files | Microsoft SSO cookie from the shared profile |
+| `panopto` | lecture recordings, transcripts, cross-lecture search | Microsoft SSO cookie |
+| `ed` | Ed Discussion: courses, threads, announcements, search | 14-day session token from the shared profile |
+| `labts` | lab submission and test state | DoC login cookie |
+| `imperial` | auth `status`, `refresh`, downloaded `files`, `clear_cache` | — |
+
+The five Imperial services are GET-only by construction (`imperial/http.py` has no
+write path) and cache every response in `imperial-cache.sqlite`, so repeated reads
+never re-hit a provider. Fetched files land under `~/Projects/imperial/files`
+(override with `IMPERIAL_DIR`). Tokens live in `~/.config/context-mcp/imperial-auth.json`.
 
 ## Safety model
 
@@ -44,6 +62,8 @@ context_mcp/
   calendar/  calendar_api.py tools.py
   linkedin/  browser.py extract.py login.py tools.py
   whatsapp/  db.py tools.py
+  imperial/  auth.py http.py util.py scientia.py canvas.py panopto.py ed.py labts.py tools.py refresh.py setup.py
+  gateway.py                  folds each domain into one dispatcher tool
 tests/                        pytest, behavior-encoding
 ```
 
@@ -54,7 +74,18 @@ uv sync
 uv run patchright install chromium        # LinkedIn stealth browser
 uv run python -m context_mcp.mail.setup    # sign into Outlook web once
 uv run python -m context_mcp.linkedin.login # sign into LinkedIn once
+uv run python -m context_mcp.imperial.setup scientia labts  # sign in once; Canvas/Panopto/Ed ride the Outlook SSO
 ```
+
+## Imperial auth, self-sustaining
+
+Canvas, Panopto and Ed authenticate from the same signed-in browser profile the
+Outlook harvest uses, so they need no separate login. Scientia and LabTS need a
+one-time DoC sign-in into that profile (the `imperial.setup` line above). A
+LaunchAgent (`com.advit.contextmcp.imperial-refresh`) re-harvests every 8 hours and
+on wake; when a session has fully lapsed to a 2FA wall it fires one macOS
+notification naming which provider to sign back in. `imperial status` shows the age
+of each session; `uv run python -m context_mcp.imperial.refresh` forces a refresh.
 
 Gmail credentials live in `.env` (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`,
 `GMAIL_REFRESH_TOKEN`); mint the token with `uv run python -m context_mcp.mail.auth`.
