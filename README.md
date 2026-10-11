@@ -1,7 +1,7 @@
 # context-mcp
 
-One local MCP over Advit's personal context, so an agent has a single interface
-for mail, calendar, LinkedIn, WhatsApp and his Imperial coursework. Read and triage
+One local MCP over your personal context, so an agent has a single interface
+for mail, calendar, LinkedIn, WhatsApp and your Imperial coursework. Read and triage
 only: it never sends a message, posts, submits coursework, or permanently deletes.
 
 ## Soft-loaded tools
@@ -64,31 +64,59 @@ context_mcp/
   whatsapp/  db.py tools.py
   imperial/  auth.py http.py util.py scientia.py canvas.py panopto.py ed.py labts.py tools.py refresh.py setup.py
   gateway.py                  folds each domain into one dispatcher tool
+scripts/install-launchagents.sh  background Outlook and Imperial refresh
 tests/                        pytest, behavior-encoding
 ```
 
 ## Setup
 
+macOS only. Needs [uv](https://docs.astral.sh/uv/), Node and `agent-browser`.
+
 ```bash
+brew install uv node
+npm install -g agent-browser
+agent-browser install
 uv sync
-uv run patchright install chromium        # LinkedIn stealth browser
-uv run python -m context_mcp.mail.setup    # sign into Outlook web once
-uv run python -m context_mcp.linkedin.login # sign into LinkedIn once
-uv run python -m context_mcp.imperial.setup scientia labts  # sign in once; Canvas/Panopto/Ed ride the Outlook SSO
 ```
+
+Imperial, Outlook mail and Outlook calendar:
+
+```bash
+uv run python -m context_mcp.mail.setup    # sign into Outlook web once, tick Stay signed in
+uv run python -m context_mcp.imperial.setup scientia labts  # sign in once; Canvas/Panopto/Ed ride the Outlook SSO
+uv run python -m context_mcp.imperial.refresh
+scripts/install-launchagents.sh
+```
+
+Optional domains. Each one fails only when called until it is set up.
+
+- Gmail and Google Calendar: see below.
+- LinkedIn: `uv run patchright install chromium`, then `uv run python -m context_mcp.linkedin.login`.
+- WhatsApp: WhatsApp Desktop signed in, and Full Disk Access for the app that runs
+  your agent (System Settings, Privacy & Security, Full Disk Access).
 
 ## Imperial auth, self-sustaining
 
 Canvas, Panopto and Ed authenticate from the same signed-in browser profile the
 Outlook harvest uses, so they need no separate login. Scientia and LabTS need a
 one-time DoC sign-in into that profile (the `imperial.setup` line above). A
-LaunchAgent (`com.advit.contextmcp.imperial-refresh`) re-harvests every 8 hours and
+LaunchAgent (`com.context-mcp.imperial-refresh`) re-harvests every 8 hours and
 on wake; when a session has fully lapsed to a 2FA wall it fires one macOS
 notification naming which provider to sign back in. `imperial status` shows the age
 of each session; `uv run python -m context_mcp.imperial.refresh` forces a refresh.
 
-Gmail credentials live in `.env` (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`,
-`GMAIL_REFRESH_TOKEN`); mint the token with `uv run python -m context_mcp.mail.auth`.
+Outlook tokens rotate the same way under `com.context-mcp.outlook-refresh`. Both
+agents are written by `scripts/install-launchagents.sh` for the clone they run
+from; rerun it after moving the repo.
+
+## Gmail
+
+Gmail and Google Calendar use your own OAuth client. In Google Cloud Console, create
+a project, enable the Gmail API and the Google Calendar API, configure the consent
+screen with yourself as a test user, and create an OAuth client of type Desktop app.
+Copy `.env.example` to `.env`, fill in `GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET`,
+then mint the refresh token with `uv run python -m context_mcp.mail.auth`. A consent
+screen left in Testing expires the token after 7 days; publish it to keep it.
 
 ## Checks
 
@@ -100,5 +128,5 @@ uv run python -c "import server; print('import ok')"
 ## Register
 
 ```bash
-claude mcp add -s user context -- uv run --directory /Users/advitarora/.claude/mcp/context-mcp python server.py
+claude mcp add -s user context -- uv run --directory "$PWD" python server.py
 ```

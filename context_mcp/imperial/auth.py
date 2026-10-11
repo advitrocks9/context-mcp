@@ -27,13 +27,6 @@ STORE = CONFIG_DIR / "imperial-auth.json"
 ED_API = "https://us.edstem.org/api"
 SCIENTIA_API = "https://scientia.doc.ic.ac.uk/api"
 SCIENTIA_MAX_AGE = 780
-PROBE = {
-    "canvas": "https://canvas.imperial.ac.uk/api/v1/users/self",
-    "panopto": "https://imperial.cloud.panopto.eu/Panopto/api/v1/auth/legacyLogin",
-    "ed": f"{ED_API}/user",
-    "scientia": "https://scientia.doc.ic.ac.uk/",
-    "labts": "https://teaching.doc.ic.ac.uk/labts/home/index/2627",
-}
 WARM = {
     "canvas": "https://canvas.imperial.ac.uk/",
     "panopto": "https://imperial.cloud.panopto.eu/Panopto/Pages/Home.aspx",
@@ -144,7 +137,7 @@ def status() -> dict[str, Any]:
     state = _load()
     now = time.time()
     out = {}
-    for provider in PROBE:
+    for provider in WARM:
         cred = state.get(provider, {})
         fetched = cred.get("fetched", 0)
         has = bool(cred.get("token") or cred.get("cookie"))
@@ -221,7 +214,7 @@ def _reset_browser() -> None:
 
 
 def refresh(providers: list[str] | None = None, headed: bool = False) -> dict[str, str]:
-    targets = providers or list(PROBE)
+    targets = providers or list(WARM)
     result: dict[str, str] = {}
     with _lock, browser.session():
         _reset_browser()
