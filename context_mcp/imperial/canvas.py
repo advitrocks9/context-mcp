@@ -106,14 +106,6 @@ def announcements(days: int = 60) -> list[dict[str, Any]]:
             for a in (rows or [])]
 
 
-def files(course: int) -> list[dict[str, Any]]:
-    rows = http.get_paged_json(P, f"{API}/courses/{course}/files", ttl=TTL_HOUR * 6, params={"per_page": 50})
-    if isinstance(rows, dict):
-        return [{"error": rows.get("status") or "not accessible"}]
-    return [{"id": f.get("id"), "name": f.get("display_name"), "size": f.get("size"),
-             "type": f.get("content-type"), "updated": f.get("updated_at")} for f in rows]
-
-
 def file(file_id: int, course: str = "") -> dict[str, Any]:
     meta = http.get_json(P, f"{API}/files/{file_id}", ttl=TTL_DAY)
     pub = http.get_json(P, f"{API}/files/{file_id}/public_url", ttl=0)

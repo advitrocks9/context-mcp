@@ -29,7 +29,7 @@ def register(mcp: FastMCP) -> None:
     gateway.service(mcp, "canvas", "Canvas (Maths VLE)", {
         "courses": canvas.courses, "content": canvas.content, "page": canvas.page, "pages": canvas.pages,
         "panopto_folders": canvas.panopto_folders, "deadlines": canvas.deadlines,
-        "announcements": canvas.announcements, "files": canvas.files, "file": canvas.file, "search": canvas.search,
+        "announcements": canvas.announcements, "file": canvas.file, "search": canvas.search,
     })
     gateway.service(mcp, "panopto", "Panopto lectures", {
         "folders": panopto.folders, "recordings": panopto.recordings,

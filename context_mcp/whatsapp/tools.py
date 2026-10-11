@@ -55,14 +55,14 @@ def register(mcp: FastMCP) -> None:
         """Message totals for one chat: total, sent, received, first and last dates. Read-only."""
         return db.person_stats(name_or_jid)
 
-    @tool(title="WhatsApp Schema", annotations=READ_LOCAL)
-    def whatsapp_schema() -> dict[str, list[str]]:
+    @tool(title="WhatsApp Tables", annotations=READ_LOCAL)
+    def whatsapp_tables() -> dict[str, list[str]]:
         """Return the ZWA* table and column names, so whatsapp_query can be written against them. Read-only."""
         return db.schema()
 
     @tool(title="WhatsApp Raw Query", annotations=READ_LOCAL)
     def whatsapp_query(
-        sql: Annotated[str, Field(description="A single read-only SELECT/WITH over the ZWA* tables. See whatsapp_schema.")],
+        sql: Annotated[str, Field(description="A single read-only SELECT/WITH over the ZWA* tables. See whatsapp_tables.")],
         limit: Annotated[int, Field(default=200, ge=1, le=2000, description="Maximum rows.")] = 200,
     ) -> list[dict[str, Any]]:
         """Run one read-only SELECT against the WhatsApp store for questions the helpers do not cover. Writes are rejected and the connection is read-only. Read-only."""

@@ -43,10 +43,6 @@ def test_announcements_responds():
     assert all(a["title"] for a in call("canvas", "announcements"))
 
 
-def test_files_lists_course_files(courses):
-    assert all(f["id"] and f["name"] for f in call("canvas", "files", course=courses[0]["id"]))
-
-
 def test_file_downloads_a_linked_file(courses):
     for c in courses:
         for module in call("canvas", "content", course=c["id"]):

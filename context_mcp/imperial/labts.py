@@ -17,7 +17,7 @@ P = "labts"
 BASE = "https://teaching.doc.ic.ac.uk/labts"
 _ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL)
 _CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
-_HREF = re.compile(r'href="(/labts/lab_exercises/[^"]+)"')
+_HREF = re.compile(r'href="(?:https://teaching\.doc\.ic\.ac\.uk)?(/labts/lab_exercises/[^"]+)"')
 
 
 def _text(fragment: str) -> str:

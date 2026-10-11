@@ -15,7 +15,7 @@ Each connector is one tool. Call it with `op="help"` to list its operations,
 | `calendar` | Google and Outlook calendars. Reads events, and can RSVP, create or delete them | same as mail |
 | `scientia` | DoC modules, exercises and specs, resources, past papers, marks | DoC login |
 | `labts` | Lab exercises, submission and test state, repositories | DoC login |
-| `canvas` | Maths courses, pages, deadlines, announcements, files | Microsoft SSO |
+| `canvas` | Maths courses, pages, deadlines, announcements, linked file downloads | Microsoft SSO |
 | `panopto` | Lecture recordings, transcripts, search across lectures | Microsoft SSO |
 | `ed` | Ed Discussion courses, threads, announcements, search | Microsoft SSO |
 | `imperial` | Session status, refresh, downloaded files, cache | none |

@@ -35,8 +35,8 @@ def test_person_stats_counts_messages(chat):
     assert one("whatsapp", "person_stats", name_or_jid=chat["jid"])["total"] > 0
 
 
-def test_schema_lists_the_store_tables():
-    tables = one("whatsapp", "schema")
+def test_tables_lists_the_store_tables():
+    tables = one("whatsapp", "tables")
     assert "ZWAMESSAGE" in tables and "ZWACHATSESSION" in tables
 
 
