@@ -2,7 +2,8 @@
 
 ## Project
 
-One local FastMCP server over personal context: mail, calendar, LinkedIn, WhatsApp.
+One local FastMCP server over personal context: mail, calendar, LinkedIn, WhatsApp,
+Imperial coursework.
 Read and triage only, over stdio.
 
 ## Safety Rules
@@ -20,6 +21,6 @@ Read and triage only, over stdio.
 ## Checks
 
 ```bash
-uv run python -m pytest -q
-uv run python -c "import server; print('import ok')"
+uv run pytest
+uv run ruff check .
 ```

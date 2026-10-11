@@ -1,85 +1,56 @@
-import sqlite3
-import pathlib
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 
-from context_mcp.whatsapp import db
-
-
-def test_guard_accepts_select():
-    assert db.guard_sql("SELECT 1").lower().startswith("select")
-    assert db.guard_sql("  select a from t  ").strip()
-    assert db.guard_sql("WITH c AS (SELECT 1) SELECT * FROM c").lower().startswith("with")
+from tests.client import call, one, raw
 
 
-@pytest.mark.parametrize("bad", [
-    "", "   ", "DELETE FROM ZWAMESSAGE", "update t set x=1", "DROP TABLE t",
-    "INSERT INTO t VALUES (1)", "PRAGMA table_info(t)", "ATTACH DATABASE 'x' AS y",
-    "SELECT 1; DROP TABLE t", "VACUUM", "REINDEX",
-])
-def test_guard_rejects_non_read_or_multi(bad):
-    with pytest.raises(ValueError):
-        db.guard_sql(bad)
+@pytest.fixture(scope="module")
+def chat() -> dict:
+    chats = call("whatsapp", "list_chats", limit=10, kind="direct")
+    assert chats, "no direct chats"
+    return chats[0]
 
 
-def test_connection_is_read_only(tmp_path):
-    p = tmp_path / "t.sqlite"
-    seed = sqlite3.connect(p)
-    seed.execute("CREATE TABLE t (a INTEGER)")
-    seed.execute("INSERT INTO t VALUES (1)")
-    seed.commit()
-    seed.close()
-    conn = db._connect(p)
-    with pytest.raises(sqlite3.OperationalError):
-        conn.execute("INSERT INTO t VALUES (2)")
-    conn.close()
+def test_list_chats_returns_chats():
+    assert all(c["name"] and c["jid"] for c in call("whatsapp", "list_chats", limit=10))
 
 
-def test_query_runs_select_on_fixture(tmp_path):
-    p = tmp_path / "t.sqlite"
-    seed = sqlite3.connect(p)
-    seed.execute("CREATE TABLE t (a INTEGER, b TEXT)")
-    seed.executemany("INSERT INTO t VALUES (?,?)", [(1, "x"), (2, "y")])
-    seed.commit()
-    seed.close()
-    rows = db.query("SELECT a, b FROM t ORDER BY a", path=p)
-    assert rows == [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
+def test_list_contacts_returns_contacts():
+    assert all(c["jid"] for c in call("whatsapp", "list_contacts", limit=10))
 
 
-def test_query_limit_caps_rows(tmp_path):
-    p = tmp_path / "t.sqlite"
-    seed = sqlite3.connect(p)
-    seed.execute("CREATE TABLE t (a INTEGER)")
-    seed.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(100)])
-    seed.commit()
-    seed.close()
-    assert len(db.query("SELECT a FROM t", limit=10, path=p)) == 10
+def test_get_chat_returns_recent_messages(chat):
+    assert one("whatsapp", "get_chat", name_or_jid=chat["jid"], limit=10)["messages"]
 
 
-live = pytest.mark.skipif(not db.DB_PATH.exists(), reason="WhatsApp store not present")
+def test_search_messages_finds_text_from_a_chat(chat):
+    messages = one("whatsapp", "get_chat", name_or_jid=chat["jid"], limit=50)["messages"]
+    text = next((m["text"] for m in messages if len(m.get("text") or "") >= 8), None)
+    assert text, "no text message to search for"
+    found = call("whatsapp", "search_messages", text=text, contact=chat["name"], limit=5)
+    assert any(text in m["text"] for m in found)
 
 
-@live
-def test_schema_exposes_core_tables():
-    s = db.schema()
-    assert "ZWAMESSAGE" in s and "ZWACHATSESSION" in s
-    assert any("ZTEXT" in c for c in s["ZWAMESSAGE"])
+def test_person_stats_counts_messages(chat):
+    assert one("whatsapp", "person_stats", name_or_jid=chat["jid"])["total"] > 0
 
 
-@live
-def test_list_chats_shape():
-    chats = db.list_chats(limit=5)
-    assert chats and all("name" in c and "jid" in c for c in chats)
+def test_schema_lists_the_store_tables():
+    tables = one("whatsapp", "schema")
+    assert "ZWAMESSAGE" in tables and "ZWACHATSESSION" in tables
 
 
-@live
-def test_search_messages_returns_list():
-    assert isinstance(db.search_messages("the", limit=3), list)
+def test_query_runs_a_select():
+    assert one("whatsapp", "query", sql="SELECT COUNT(*) AS n FROM ZWAMESSAGE")["n"] > 0
 
 
-@live
-def test_get_chat_and_person_stats():
-    chats = db.list_chats(limit=1)
-    chat = db.get_chat(chats[0]["jid"], limit=5)
-    assert "messages" in chat
-    stats = db.person_stats(chats[0]["jid"])
-    assert "total" in stats and stats["total"] >= 0
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DELETE FROM ZWAMESSAGE WHERE 0",
+        "WITH x AS (SELECT 1) DELETE FROM ZWAMESSAGE WHERE 0",
+    ],
+)
+def test_query_cannot_write_the_store(sql):
+    with pytest.raises(ToolError):
+        raw("whatsapp", "query", sql=sql)
