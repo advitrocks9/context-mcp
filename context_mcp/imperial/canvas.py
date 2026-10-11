@@ -11,7 +11,7 @@ from context_mcp.imperial.util import TTL_DAY, TTL_HOUR, download
 P = "canvas"
 API = "https://canvas.imperial.ac.uk/api/v1"
 _CODE = re.compile(r"\b(?:COMP|MATH)\d{5}\b")
-_PANOPTO = re.compile(r"folderID=([0-9a-f-]{36})", re.I)
+_PANOPTO = re.compile(r"folderID=([0-9a-f-]{36})", re.IGNORECASE)
 
 
 def courses() -> list[dict[str, Any]]:

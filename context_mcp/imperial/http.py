@@ -112,8 +112,7 @@ def get_bytes(provider: str, url: str, ttl: float = 0, params: dict[str, Any] | 
 def get_json(provider: str, url: str, ttl: float = 0, params: dict[str, Any] | None = None) -> Any:
     body, _ = get_bytes(provider, url, ttl=ttl, params=params, follow=False)
     text = body.decode("utf-8", "replace").lstrip()
-    if text.startswith("while(1);"):
-        text = text[len("while(1);"):]
+    text = text.removeprefix("while(1);")
     return json.loads(text) if text else None
 
 
@@ -130,8 +129,7 @@ def get_paged_json(provider: str, url: str, ttl: float = 0, params: dict[str, An
     for _ in range(cap):
         body, _ctype = get_bytes(provider, url, ttl=ttl, params=page, follow=False)
         text = body.decode("utf-8", "replace").lstrip()
-        if text.startswith("while(1);"):
-            text = text[len("while(1);"):]
+        text = text.removeprefix("while(1);")
         batch = json.loads(text) if text else []
         if isinstance(batch, dict):
             return batch

@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from context_mcp.common import CONFIG_DIR
 

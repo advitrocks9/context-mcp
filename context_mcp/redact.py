@@ -11,7 +11,7 @@ def _hide(token: str) -> str:
     return (token[:8] + MASK) if len(token) > 12 else MASK
 
 
-def _mask(match: "re.Match[str]") -> str:
+def _mask(match: re.Match[str]) -> str:
     return _hide(match.group(0))
 
 _VALUE = r"""['"]?([^\s'"`]{3,})['"]?"""

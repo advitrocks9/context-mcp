@@ -150,14 +150,14 @@ def get_message(mid: str, body: bool = True) -> dict[str, Any]:
 def _message_state(mid: str) -> dict[str, Any] | None:
     try:
         return api("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId,IsRead,Categories,Flag")
-    except Exception:
+    except HTTPError:
         return None
 
 
 def _current_folder(mid: str) -> str | None:
     try:
         return api("GET", f"{BASE}/me/messages/{mid}?$select=ParentFolderId").get("ParentFolderId")
-    except Exception:
+    except HTTPError:
         return None
 
 

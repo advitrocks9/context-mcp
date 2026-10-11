@@ -6,13 +6,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["httpx>=0.27", "mcp>=1.2,<2", "patchright>=1.40"]
 
-[project.optional-dependencies]
-dev = ["pytest>=8.0"]
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff==0.17.0"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py310"
 
+[tool.ruff.lint]
+ignore = ["BLE001", "S110", "S112"]
+
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q --tb=short"
+log_level = "WARNING"
 testpaths = ["tests"]

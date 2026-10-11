@@ -6,9 +6,8 @@ import datetime
 import urllib.parse
 from typing import Any
 
-from context_mcp.mail import gmail
-from context_mcp.mail import outlook
 from context_mcp.common import http, parallel_map
+from context_mcp.mail import gmail, outlook
 
 OUTLOOK = "https://outlook.office.com/api/v2.0/me"
 GOOGLE = "https://www.googleapis.com/calendar/v3"

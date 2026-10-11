@@ -7,14 +7,18 @@ fallen back to a login wall triggers one macOS notification.
 
 from __future__ import annotations
 
+import sys
+
+import httpx
+
 from context_mcp.imperial import auth
 
 
 def main() -> None:
     try:
         auth.scientia_refresh()
-    except Exception:
-        pass
+    except httpx.HTTPError as exc:
+        print(f"scientia refresh: {exc}", file=sys.stderr)
     auth.refresh()
 
 

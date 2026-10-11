@@ -15,8 +15,8 @@ from context_mcp.imperial.util import TTL_SHORT, academic_year
 
 P = "labts"
 BASE = "https://teaching.doc.ic.ac.uk/labts"
-_ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S)
-_CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
+_ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL)
+_CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
 _HREF = re.compile(r'href="(/labts/lab_exercises/[^"]+)"')
 
 

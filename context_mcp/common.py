@@ -10,8 +10,9 @@ import pathlib
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable, Iterable, Mapping
 from email.utils import parsedate_to_datetime
-from typing import Any, Callable, Iterable, Mapping, TypeVar
+from typing import Any, TypeVar
 
 import httpx
 
@@ -107,7 +108,7 @@ def parse_date(value: object) -> float:
         if "T" in text:
             return datetime.datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
         return parsedate_to_datetime(text).timestamp()
-    except Exception:
+    except (ValueError, TypeError):
         return 0.0
 
 

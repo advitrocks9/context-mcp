@@ -10,7 +10,6 @@ from __future__ import annotations
 import base64
 import contextlib
 import datetime
-import httpx
 import json
 import os
 import subprocess
@@ -19,6 +18,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from context_mcp import browser
 from context_mcp.common import CONFIG_DIR
@@ -110,7 +111,7 @@ def _jwt_exp(token: str) -> float:
         seg = token.split(".")[1]
         payload = json.loads(base64.urlsafe_b64decode(seg + "=" * ((4 - len(seg) % 4) % 4)))
         return float(payload.get("exp", 0))
-    except Exception:
+    except (IndexError, ValueError):
         return 0.0
 
 
@@ -155,7 +156,7 @@ def _state_save() -> dict[str, Any]:
     try:
         done = subprocess.run(
             ["agent-browser", "--profile", str(browser.PROFILE), "--session", browser.SESSION, "state", "save", tmp],
-            capture_output=True, text=True, timeout=browser.TIMEOUT)
+            capture_output=True, text=True, timeout=browser.TIMEOUT, check=False)
         if done.returncode != 0:
             return {}
         return json.loads(Path(tmp).read_text())
@@ -202,12 +203,12 @@ def _extract(provider: str, state: dict[str, Any]) -> dict[str, Any]:
 def notify(title: str, message: str) -> None:
     script = f'display notification {json.dumps(message)} with title {json.dumps(title)} sound name "Submarine"'
     with contextlib.suppress(Exception):
-        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10, check=False)
 
 
 def _reset_browser() -> None:
     with contextlib.suppress(Exception):
-        subprocess.run(["pkill", "-9", "-f", str(browser.PROFILE)], capture_output=True, timeout=10)
+        subprocess.run(["pkill", "-9", "-f", str(browser.PROFILE)], capture_output=True, timeout=10, check=False)
     with contextlib.suppress(Exception):
         browser.DAEMON_PID.unlink(missing_ok=True)
     time.sleep(2)

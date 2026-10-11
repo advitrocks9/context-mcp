@@ -62,11 +62,11 @@ def register(mcp: FastMCP) -> None:
 
     @tool(title="Calendar Create Event", annotations=REVERSIBLE)
     def calendar_create_event(provider: Mut, subject: str, start: str, end: str,
-                              location: str = "", body: str = "", attendees: list[str] = [],
+                              location: str = "", body: str = "", attendees: list[str] | None = None,
                               all_day: bool = False, notify: Notify = False) -> dict[str, Any]:
         """Create an event. Attendees are emailed only when notify=true. Remove with calendar_delete_event."""
         return calendar_api.create_event(provider, subject, start, end, location=location, body=body,
-                                         attendees=attendees, all_day=all_day, notify=notify)
+                                         attendees=attendees or [], all_day=all_day, notify=notify)
 
     @tool(title="Calendar Update Event", annotations=REVERSIBLE)
     def calendar_update_event(provider: Mut, id: str, subject: str = "", start: str = "",

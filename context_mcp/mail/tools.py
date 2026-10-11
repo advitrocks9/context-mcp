@@ -144,9 +144,9 @@ def register(mcp: FastMCP) -> None:
 
     @tool(title="Mail Draft", annotations=REVERSIBLE)
     def mail_draft(provider: Mut, to: str, subject: str, body: str, cc: str = "",
-                   attachments: list[str] = []) -> dict[str, Any]:
+                   attachments: list[str] | None = None) -> dict[str, Any]:
         """Create a Gmail or Outlook draft without sending. The user sends manually; this never sends."""
-        return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments)
+        return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments or [])
 
     @tool(title="Mail Recent Actions", annotations=READ_LOCAL)
     def mail_recent_actions(provider: Both = "both",
@@ -192,7 +192,7 @@ def register(mcp: FastMCP) -> None:
                   action: Literal["trash", "mark_read", "mark_spam", "move", "tag"],
                   dry_run: bool = True, folder: str = "all",
                   limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
-                  to_folder: str = "", labels: list[str] = []) -> dict[str, Any]:
+                  to_folder: str = "", labels: list[str] | None = None) -> dict[str, Any]:
         """Preview then apply one action to messages matching a query. Always dry_run first, show the sample, then dry_run=false. Trash and mark_read are recoverable."""
         if not dry_run and not query.strip() and folder.lower() in {"all", "allitems"}:
             raise ValueError("Refusing to mutate all mail without a query or narrowed folder.")

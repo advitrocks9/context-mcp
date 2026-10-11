@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import functools
 import inspect
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import anyio.to_thread
 from mcp.server.fastmcp import Context, FastMCP
 
-from context_mcp.toolkit import READ, REVERSIBLE
+from context_mcp.toolkit import DESTRUCTIVE, READ, REVERSIBLE
 
 
 def _help(ops: dict[str, str]) -> dict[str, Any]:
@@ -58,6 +59,7 @@ def fold(mcp: FastMCP, name: str, title: str) -> None:
     tools = {op: manager.get_tool(full) for op, full in members.items()}
     summaries = {op: (t.description or "").split("\n")[0] for op, t in tools.items()}
     read_only = all((t.annotations and t.annotations.readOnlyHint) for t in tools.values())
+    destructive = any((t.annotations and t.annotations.destructiveHint) for t in tools.values())
 
     async def dispatcher(op: str = "", params: dict[str, Any] | None = None,
                          ctx: Context | None = None) -> Any:
@@ -76,4 +78,4 @@ def fold(mcp: FastMCP, name: str, title: str) -> None:
     verb = "Read-only." if read_only else "Some operations write (drafts, moves, RSVPs); they never auto-send."
     dispatcher.__doc__ = f"{title}. {verb} Operations: {', '.join(sorted(members))}. Call op='help' or op='schema'."
     mcp.add_tool(dispatcher, name=name, title=title, description=dispatcher.__doc__,
-                 annotations=READ if read_only else REVERSIBLE)
+                 annotations=READ if read_only else DESTRUCTIVE if destructive else REVERSIBLE)

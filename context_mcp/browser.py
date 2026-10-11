@@ -10,8 +10,9 @@ import shutil
 import signal
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from context_mcp.common import CONFIG_DIR
 
@@ -38,7 +39,7 @@ def session() -> Iterator[None]:
 
 
 def reap() -> None:
-    found = subprocess.run(["pgrep", "-f", str(PROFILE)], capture_output=True, text=True)
+    found = subprocess.run(["pgrep", "-f", str(PROFILE)], capture_output=True, text=True, check=False)
     for pid in found.stdout.split():
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(int(pid), signal.SIGTERM)
@@ -58,7 +59,7 @@ def _run(*args: str, headed: bool = False) -> subprocess.CompletedProcess[str]:
     if headed:
         command.append("--headed")
     command += args
-    return subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT)
+    return subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT, check=False)
 
 
 def open_page(url: str, headed: bool = False) -> None:

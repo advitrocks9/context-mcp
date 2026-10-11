@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
-
 import sys
+from collections.abc import Callable
+from typing import Any
 
 from context_mcp.common import parallel_map, parse_date
 from context_mcp.mail import gmail, outlook
