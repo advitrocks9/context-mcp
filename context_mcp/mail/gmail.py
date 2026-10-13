@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.parse
 from email.message import EmailMessage
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -250,18 +251,61 @@ def list_messages_page(
     }
 
 
-def _extract_body(payload: dict[str, Any] | None) -> str:
-    if not payload:
-        return ""
-    if str(payload.get("mimeType", "")).startswith("text/plain"):
+class _HtmlText(HTMLParser):
+    BLOCKS = frozenset({"br", "p", "div", "tr", "li", "table", "h1", "h2", "h3", "h4", "h5", "h6"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.out: list[str] = []
+        self.hidden = 0
+        self.href = ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in ("script", "style", "head"):
+            self.hidden += 1
+        elif tag == "a":
+            self.href = dict(attrs).get("href") or ""
+        elif tag in self.BLOCKS:
+            self.out.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style", "head"):
+            self.hidden = max(0, self.hidden - 1)
+        elif tag == "a":
+            if self.href.startswith("http") and self.href not in "".join(self.out[-3:]):
+                self.out.append(f" <{self.href}>")
+            self.href = ""
+        elif tag in self.BLOCKS:
+            self.out.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.hidden:
+            self.out.append(data)
+
+
+def _html_text(markup: str) -> str:
+    parser = _HtmlText()
+    parser.feed(markup)
+    lines = (" ".join(line.split()) for line in "".join(parser.out).splitlines())
+    return "\n".join(line for line in lines if line)
+
+
+def _part_text(payload: dict[str, Any], mime: str) -> str:
+    if str(payload.get("mimeType", "")).startswith(mime):
         data = (payload.get("body") or {}).get("data")
         if data:
             return base64.urlsafe_b64decode(str(data) + "==").decode("utf-8", "ignore")
     for part in payload.get("parts", []) or []:
-        text = _extract_body(part)
+        text = _part_text(part, mime)
         if text:
             return text
     return ""
+
+
+def _extract_body(payload: dict[str, Any] | None) -> str:
+    if not payload:
+        return ""
+    return _part_text(payload, "text/plain") or _html_text(_part_text(payload, "text/html"))
 
 
 def get_message(mid: str, body: bool = True) -> dict[str, Any]:
