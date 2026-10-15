@@ -6,13 +6,15 @@ import base64
 import contextlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 from context_mcp import browser
-from context_mcp.common import CONFIG_DIR, http
+from context_mcp.common import CONFIG_DIR, http, notify
 
 CLIENT_ID = "9199bf20-a13f-4107-85dc-02114787ef48"
 ORIGIN = "https://outlook.office.com"
@@ -21,13 +23,16 @@ TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MAIL_URL = "https://outlook.office.com/mail/"
 
 STATE = CONFIG_DIR / "outlook-token.json"
+SIGN_IN_PID = CONFIG_DIR / "outlook-signin.pid"
+SIGN_IN_LOG = CONFIG_DIR / "outlook-signin.log"
 _token_lock = threading.Lock()
 SKEW = 300
 HARVEST_DEADLINE = 90
 SIGN_IN_DEADLINE = 600
+MFA_CODES = ("AADSTS50076", "AADSTS50078", "AADSTS50079", "AADSTS50158")
 
-SETUP_HINT = ("OWA session is not signed in. Run `python -m context_mcp.mail.setup` "
-              "and sign in once with Stay signed in ticked.")
+SIGN_IN_PENDING = ("Outlook needs you to sign in with MFA. A sign-in window is open on your Mac. "
+                   "Approve it, then retry the call.")
 
 _HARVEST_JS = r"""
 (function () {
@@ -124,27 +129,49 @@ def _harvest() -> dict[str, Any]:
                     return found
                 walls = walls + 1 if _walled() else 0
                 if walls >= 3:
-                    raise RuntimeError(SETUP_HINT)
+                    raise RuntimeError("OWA landed on the Microsoft sign-in wall.")
                 time.sleep(3)
-            raise RuntimeError("OWA did not settle on the mailbox in time. Retry, or re-run setup.")
+            raise RuntimeError("OWA did not reach the mailbox in time.")
         finally:
             browser.close()
+
+
+def _sign_in_running() -> bool:
+    try:
+        os.kill(int(SIGN_IN_PID.read_text().strip()), 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _prompt_sign_in() -> NoReturn:
+    if not _sign_in_running():
+        with SIGN_IN_LOG.open("a") as log:
+            child = subprocess.Popen([sys.executable, "-m", "context_mcp.mail.setup"], stdin=subprocess.DEVNULL,
+                                     stdout=log, stderr=log, start_new_session=True)
+        SIGN_IN_PID.write_text(str(child.pid))
+        notify("Outlook sign-in needed", "Approve the Imperial MFA prompt in the window that just opened.")
+    raise RuntimeError(SIGN_IN_PENDING)
 
 
 def sign_in() -> str:
-    with browser.session():
-        browser.close()
-        try:
-            browser.open_page(MAIL_URL, headed=True)
-            deadline = time.time() + SIGN_IN_DEADLINE
-            while time.time() < deadline:
-                found = _read_tokens()
-                if found:
-                    return _commit(found)
-                time.sleep(4)
-            raise RuntimeError("Outlook sign-in did not finish within 10 minutes.")
-        finally:
+    SIGN_IN_PID.write_text(str(os.getpid()))
+    try:
+        with browser.session():
             browser.close()
+            try:
+                browser.open_page(MAIL_URL, headed=True)
+                deadline = time.time() + SIGN_IN_DEADLINE
+                while time.time() < deadline:
+                    found = _read_tokens()
+                    if found:
+                        return _commit(found)
+                    time.sleep(4)
+                raise RuntimeError("Outlook sign-in did not finish within 10 minutes.")
+            finally:
+                browser.close()
+    finally:
+        SIGN_IN_PID.unlink(missing_ok=True)
 
 
 def _mint(refresh_token: str) -> dict[str, Any]:
@@ -161,7 +188,7 @@ def _commit(found: dict[str, Any]) -> str:
         minted = _mint(refresh_token)
         access, refresh_token = minted["access"], minted["refresh"]
     if not access:
-        raise RuntimeError(SETUP_HINT)
+        raise RuntimeError("OWA held no Outlook access or refresh token.")
     _state_save({"access": access, "refresh": refresh_token, "exp": _jwt_exp(access)})
     return access
 
@@ -192,4 +219,19 @@ def get_token() -> str:
             except RuntimeError as exc:
                 if "AADSTS" not in str(exc):
                     raise
-        return _commit(_harvest())
+                if any(code in str(exc) for code in MFA_CODES):
+                    _prompt_sign_in()
+        if _sign_in_running():
+            raise RuntimeError(SIGN_IN_PENDING)
+        try:
+            return _commit(_harvest())
+        except RuntimeError:
+            _prompt_sign_in()
+
+
+def status() -> dict[str, Any]:
+    try:
+        get_token()
+    except RuntimeError as exc:
+        return {"state": "signing_in" if _sign_in_running() else "failed", "detail": str(exc)}
+    return {"state": "ok", "expires_in_minutes": round((_state_load()["exp"] - time.time()) / 60)}

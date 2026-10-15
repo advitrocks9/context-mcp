@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from context_mcp.common import read_audit
-from context_mcp.mail import dispatch
+from context_mcp.mail import dispatch, outlook_auth
 from context_mcp.mail.dispatch import batch, is_reversible, message_page, one
 from context_mcp.toolkit import DESTRUCTIVE, IDEMPOTENT, READ, READ_LOCAL, REVERSIBLE, threaded
 
@@ -28,6 +28,11 @@ def register(mcp: FastMCP) -> None:
                   limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15, cursor: str = "") -> dict[str, Any]:
         """Browse a folder or triage recent mail. Returns messages plus cursors and counts; call mail_get for bodies."""
         return message_page(provider, folder=folder, query=query, unread_only=unread_only, limit=limit, cursor=cursor)
+
+    @tool(title="Mail Status", annotations=READ)
+    def mail_status() -> dict[str, Any]:
+        """Outlook sign-in state. Signs in from the saved session when it can, and opens an MFA window when it cannot."""
+        return {"outlook": outlook_auth.status()}
 
     @tool(title="Mail Search", annotations=READ)
     def mail_search(provider: Both = "both", query: str = "",
