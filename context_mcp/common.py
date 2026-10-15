@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import datetime
 import json
 import os
 import pathlib
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -116,3 +118,9 @@ def coredata_to_iso(value: float | None) -> str:
     if not value or value <= 0 or value > 4_000_000_000:
         return ""
     return datetime.datetime.fromtimestamp(value + COREDATA_EPOCH).isoformat(timespec="minutes")
+
+
+def notify(title: str, message: str) -> None:
+    script = f'display notification {json.dumps(message)} with title {json.dumps(title)} sound name "Submarine"'
+    with contextlib.suppress(Exception):
+        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10, check=False)

@@ -54,16 +54,21 @@ def prune() -> None:
         shutil.rmtree(PROFILE / relative, ignore_errors=True)
 
 
-def _run(*args: str, headed: bool = False) -> subprocess.CompletedProcess[str]:
+_headed = False
+
+
+def _run(*args: str) -> subprocess.CompletedProcess[str]:
     command = ["agent-browser", "--profile", str(PROFILE), "--session", SESSION]
-    if headed:
+    if _headed:
         command.append("--headed")
     command += args
     return subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT, check=False)
 
 
 def open_page(url: str, headed: bool = False) -> None:
-    _run("open", url, headed=headed)
+    global _headed
+    _headed = headed
+    _run("open", url)
 
 
 def current_url() -> str:
@@ -88,7 +93,9 @@ def _await_daemon_exit() -> None:
 
 
 def close() -> None:
+    global _headed
     _run("close")
+    _headed = False
     _await_daemon_exit()
     reap()
     prune()

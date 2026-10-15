@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 
 from context_mcp import browser
-from context_mcp.common import CONFIG_DIR
+from context_mcp.common import CONFIG_DIR, notify
 
 STORE = CONFIG_DIR / "imperial-auth.json"
 ED_API = "https://us.edstem.org/api"
@@ -198,12 +198,6 @@ def _extract(provider: str, state: dict[str, Any]) -> dict[str, Any]:
     if provider == "panopto":
         cred["csrf"] = _cookie_value(state, "panopto", "csrfToken")
     return cred
-
-
-def notify(title: str, message: str) -> None:
-    script = f'display notification {json.dumps(message)} with title {json.dumps(title)} sound name "Submarine"'
-    with contextlib.suppress(Exception):
-        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10, check=False)
 
 
 def _reset_browser() -> None:
