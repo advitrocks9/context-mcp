@@ -227,6 +227,7 @@ def list_messages_page(
     unread_only: bool = False,
     limit: int = 15,
     cursor: str = "",
+    body: bool = False,
 ) -> dict[str, Any]:
     params = {"maxResults": int(limit)}
     gmail_query = query or ""
@@ -251,9 +252,12 @@ def list_messages_page(
     )
     ids = [item["id"] for item in (listed.get("messages") or [])[: int(limit)]]
     known = _hydrate(ids)
+    rows = [known[i] for i in ids]
+    if body:
+        rows = parallel_map(lambda m: {**m, "body": _body(m["id"])}, rows)
     return {
         "provider": "gmail",
-        "messages": [known[i] for i in ids],
+        "messages": rows,
         "next_cursor": listed.get("nextPageToken", ""),
         "result_size_estimate": listed.get("resultSizeEstimate", len(ids)),
     }
@@ -316,11 +320,13 @@ def _extract_body(payload: dict[str, Any] | None) -> str:
     return _part_text(payload, "text/plain") or _html_text(_part_text(payload, "text/html"))
 
 
+def _body(mid: str) -> str:
+    return _extract_body(http("GET", f"{API}/messages/{mid}?format=full", _auth()).get("payload"))
+
+
 def get_message(mid: str, body: bool = True) -> dict[str, Any]:
     message = http("GET", f"{API}/messages/{mid}?format={'full' if body else 'metadata'}", _auth())
-    headers = (message.get("payload") or {}).get("headers", [])
     result = _norm(message)
-    result["to"] = _hdr(headers, "To")
     if body:
         result["body"] = _extract_body(message.get("payload"))
     return result

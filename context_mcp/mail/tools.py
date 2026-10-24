@@ -33,9 +33,18 @@ def register(mcp: FastMCP) -> None:
         unread_only: bool = False,
         limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15,
         cursor: str = "",
+        include_body: bool = False,
     ) -> dict[str, Any]:
-        """Browse a folder or triage recent mail. Returns messages plus cursors and counts; call mail_get for bodies."""
-        return message_page(provider, folder=folder, query=query, unread_only=unread_only, limit=limit, cursor=cursor)
+        """Browse a folder or triage recent mail with cursors and counts; include_body adds full untrusted bodies."""
+        return message_page(
+            provider,
+            folder=folder,
+            query=query,
+            unread_only=unread_only,
+            limit=limit,
+            cursor=cursor,
+            body=include_body,
+        )
 
     @tool(title="Mail Status", annotations=READ)
     def mail_status() -> dict[str, Any]:
@@ -48,9 +57,10 @@ def register(mcp: FastMCP) -> None:
         query: str = "",
         limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15,
         cursor: str = "",
+        include_body: bool = False,
     ) -> dict[str, Any]:
-        """Find mail by person, topic, subject, or date across folders."""
-        return message_page(provider, folder="all", query=query, limit=limit, cursor=cursor)
+        """Find mail by person, topic, subject, or date across folders; include_body adds full untrusted bodies."""
+        return message_page(provider, folder="all", query=query, limit=limit, cursor=cursor, body=include_body)
 
     @tool(title="Mail Get", annotations=READ)
     def mail_get(provider: Mut, id: str, include_body: bool = True) -> dict[str, Any]:

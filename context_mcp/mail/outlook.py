@@ -17,6 +17,7 @@ _SELECT = (
     "Id,Subject,From,ToRecipients,CcRecipients,ReceivedDateTime,IsRead,BodyPreview,"
     "ParentFolderId,Categories,HasAttachments,Importance,ConversationId,Flag"
 )
+TEXT_BODY = {"Prefer": 'outlook.body-content-type="text"'}
 
 batch_move = batch_tag = batch_flag = batch_mark_read = batch_mark_spam = None
 
@@ -119,47 +120,43 @@ def list_messages_page(
     unread_only: bool = False,
     limit: int = 15,
     cursor: str = "",
+    body: bool = False,
 ) -> dict[str, Any]:
     if cursor:
-        data = api("GET", cursor)
-        return {
-            "provider": "outlook",
-            "messages": [_norm(m) for m in data.get("value", [])],
-            "next_cursor": data.get("@odata.nextLink", ""),
-            "total_count": data.get("@odata.count"),
-        }
-
-    sel = "$select=" + _SELECT
-    top = f"$top={int(limit)}"
-    if folder and folder.lower() in ("all", "allitems"):
-        path = f"{BASE}/me/messages"
+        data = api("GET", cursor, headers=TEXT_BODY)
     else:
-        path = f"{BASE}/me/mailfolders/{_folder_id(folder)}/messages"
-    if query:
-        qs = f"{top}&{sel}&$count=true&$search=" + urllib.parse.quote('"' + query + '"')
-    else:
-        parts = [top, sel, "$count=true", "$orderby=ReceivedDateTime%20desc"]
-        if unread_only:
-            parts.append("$filter=" + urllib.parse.quote("IsRead eq false"))
-        qs = "&".join(parts)
-    data = api("GET", f"{path}?{qs}")
+        sel = "$select=" + _SELECT + (",Body" if body else "")
+        top = f"$top={int(limit)}"
+        if folder and folder.lower() in ("all", "allitems"):
+            path = f"{BASE}/me/messages"
+        else:
+            path = f"{BASE}/me/mailfolders/{_folder_id(folder)}/messages"
+        if query:
+            qs = f"{top}&{sel}&$count=true&$search=" + urllib.parse.quote('"' + query + '"')
+        else:
+            parts = [top, sel, "$count=true", "$orderby=ReceivedDateTime%20desc"]
+            if unread_only:
+                parts.append("$filter=" + urllib.parse.quote("IsRead eq false"))
+            qs = "&".join(parts)
+        data = api("GET", f"{path}?{qs}", headers=TEXT_BODY)
     return {
         "provider": "outlook",
-        "messages": [_norm(m) for m in data.get("value", [])],
+        "messages": [_row(m, body) for m in data.get("value", [])],
         "next_cursor": data.get("@odata.nextLink", ""),
         "total_count": data.get("@odata.count"),
     }
 
 
-def get_message(mid: str, body: bool = True) -> dict[str, Any]:
-    sel = _SELECT + (",Body" if body else "")
-    m = api("GET", f"{BASE}/me/messages/{mid}?$select={sel}")
+def _row(m: dict[str, Any], body: bool) -> dict[str, Any]:
     d = _norm(m)
     if body:
-        b = m.get("Body") or {}
-        d["body"] = b.get("Content", "")
-        d["body_type"] = b.get("ContentType", "")
+        d["body"] = (m.get("Body") or {}).get("Content", "")
     return d
+
+
+def get_message(mid: str, body: bool = True) -> dict[str, Any]:
+    sel = _SELECT + (",Body" if body else "")
+    return _row(api("GET", f"{BASE}/me/messages/{mid}?$select={sel}", headers=TEXT_BODY), body)
 
 
 def _message_state(mid: str) -> dict[str, Any] | None:

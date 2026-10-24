@@ -35,7 +35,13 @@ def _merge(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def message_page(
-    provider: str, folder: str = "inbox", query: str = "", unread_only: bool = False, limit: int = 15, cursor: str = ""
+    provider: str,
+    folder: str = "inbox",
+    query: str = "",
+    unread_only: bool = False,
+    limit: int = 15,
+    cursor: str = "",
+    body: bool = False,
 ) -> dict[str, Any]:
     if cursor and provider == "both":
         raise ValueError("Use provider='gmail' or provider='outlook' when passing a cursor.")
@@ -54,6 +60,7 @@ def message_page(
                 unread_only=unread_only,
                 limit=limit,
                 cursor=cursor if provider != "both" else "",
+                body=body,
             )
         except Exception as exc:
             return name, exc
