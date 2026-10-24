@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from context_mcp.common import HTTPError, audit, http
+from context_mcp.mail.compose import html_text
 from context_mcp.mail.outlook_auth import drop_access, get_token
 
 BASE = "https://outlook.office.com/api/v2.0"
@@ -324,35 +325,55 @@ def delete_filter(filter_id: str) -> dict[str, Any]:
     return {"ok": True, "deleted": filter_id}
 
 
-def create_draft(
-    to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None
-) -> dict[str, Any]:
-    msg: dict[str, Any] = {
-        "Subject": subject,
-        "Body": {"ContentType": "Text", "Content": body},
-        "ToRecipients": [{"EmailAddress": {"Address": a.strip()}} for a in to.split(",") if a.strip()],
+def _addresses(csv: str) -> list[dict[str, Any]]:
+    return [{"EmailAddress": {"Address": a.strip()}} for a in csv.split(",") if a.strip()]
+
+
+def _attachment(path: str) -> dict[str, Any]:
+    p = Path(path).expanduser()
+    ctype, _ = mimetypes.guess_type(p.name)
+    return {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        "Name": p.name,
+        "ContentType": ctype or "application/octet-stream",
+        "ContentBytes": base64.b64encode(p.read_bytes()).decode(),
     }
+
+
+def create_draft(
+    to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None, reply_to: str = ""
+) -> dict[str, Any]:
+    atts = [_attachment(path) for path in attachments or []]
+    fields: dict[str, Any] = {}
+    if to:
+        fields["ToRecipients"] = _addresses(to)
     if cc:
-        msg["CcRecipients"] = [{"EmailAddress": {"Address": a.strip()}} for a in cc.split(",") if a.strip()]
-    names: list[str] = []
-    atts: list[dict[str, Any]] = []
-    for path in attachments or []:
-        p = Path(path).expanduser()
-        ctype, _ = mimetypes.guess_type(p.name)
-        atts.append(
-            {
-                "@odata.type": "#microsoft.graph.fileAttachment",
-                "Name": p.name,
-                "ContentType": ctype or "application/octet-stream",
-                "ContentBytes": base64.b64encode(p.read_bytes()).decode(),
-            }
-        )
-        names.append(p.name)
-    if atts:
-        msg["Attachments"] = atts
-    r = api("POST", f"{BASE}/me/messages", msg)
-    audit({"provider": "outlook", "op": "create_draft", "id": r.get("Id"), "subject": subject, "attachments": names})
-    return {"ok": True, "draft_id": r.get("Id"), "attachments": names}
+        fields["CcRecipients"] = _addresses(cc)
+    if subject:
+        fields["Subject"] = subject
+    if reply_to:
+        r = api("POST", f"{BASE}/me/messages/{reply_to}/createreply", {"Comment": html_text(body)})
+        if fields:
+            r = api("PATCH", f"{BASE}/me/messages/{r['Id']}", fields)
+        for att in atts:
+            api("POST", f"{BASE}/me/messages/{r['Id']}/attachments", att)
+    else:
+        fields["Body"] = {"ContentType": "Text", "Content": body}
+        if atts:
+            fields["Attachments"] = atts
+        r = api("POST", f"{BASE}/me/messages", fields)
+    names = [att["Name"] for att in atts]
+    audit(
+        {
+            "provider": "outlook",
+            "op": "create_draft",
+            "id": r.get("Id"),
+            "subject": r.get("Subject"),
+            "reply_to": reply_to,
+            "attachments": names,
+        }
+    )
+    return {"ok": True, "draft_id": r.get("Id"), "thread_id": r.get("ConversationId"), "attachments": names}
 
 
 def undo(e: dict[str, Any]) -> bool:

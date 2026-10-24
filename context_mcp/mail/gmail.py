@@ -521,10 +521,29 @@ def delete_filter(filter_id: str) -> dict[str, Any]:
     return {"ok": True, "deleted": filter_id}
 
 
+_REPLY_HEADERS = (
+    "?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References"
+    "&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Reply-To"
+)
+
+
 def create_draft(
-    to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None
+    to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None, reply_to: str = ""
 ) -> dict[str, Any]:
     em = EmailMessage()
+    message: dict[str, Any] = {}
+    if reply_to:
+        original = http("GET", f"{API}/messages/{reply_to}{_REPLY_HEADERS}", _auth())
+        headers = original["payload"]["headers"]
+        msgid = _hdr(headers, "Message-ID")
+        if not msgid:
+            raise ValueError(f"Message {reply_to} has no Message-ID to reply to.")
+        em["In-Reply-To"] = msgid
+        em["References"] = f"{_hdr(headers, 'References')} {msgid}".strip()
+        to = to or _hdr(headers, "Reply-To") or _hdr(headers, "From")
+        thread_subject = _hdr(headers, "Subject")
+        subject = subject or (thread_subject if thread_subject.lower().startswith("re:") else "Re: " + thread_subject)
+        message["threadId"] = original["threadId"]
     em["To"] = to
     if cc:
         em["Cc"] = cc
@@ -537,10 +556,26 @@ def create_draft(
         maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
         em.add_attachment(p.read_bytes(), maintype=maintype, subtype=subtype or "octet-stream", filename=p.name)
         names.append(p.name)
-    raw = base64.urlsafe_b64encode(em.as_bytes()).decode()
-    r = http("POST", f"{API}/drafts", _auth(), {"message": {"raw": raw}})
-    audit({"provider": "gmail", "op": "create_draft", "id": r.get("id"), "subject": subject, "attachments": names})
-    return {"ok": True, "draft_id": r.get("id"), "attachments": names}
+    message["raw"] = base64.urlsafe_b64encode(em.as_bytes()).decode()
+    r = http("POST", f"{API}/drafts", _auth(), {"message": message})
+    audit(
+        {
+            "provider": "gmail",
+            "op": "create_draft",
+            "id": r.get("id"),
+            "subject": subject,
+            "reply_to": reply_to,
+            "attachments": names,
+        }
+    )
+    draft = r.get("message") or {}
+    return {
+        "ok": True,
+        "draft_id": r.get("id"),
+        "id": draft.get("id"),
+        "thread_id": draft.get("threadId"),
+        "attachments": names,
+    }
 
 
 def undo(e: dict[str, Any]) -> bool:

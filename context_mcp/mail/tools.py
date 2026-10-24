@@ -20,6 +20,9 @@ Both = Annotated[
 Mut = Annotated[Literal["gmail", "outlook"], Field(description="Mailbox to change. Never 'both' for actions.")]
 Ids = Annotated[list[str], Field(min_length=1, max_length=200, description="Provider-scoped ids from list/search.")]
 Labels = Annotated[list[str], Field(description="Gmail labels or Outlook categories to add or remove.")]
+ReplyTo = Annotated[
+    str, Field(description="Message id to reply to. Threads the draft and defaults to and subject from it.")
+]
 
 
 def register(mcp: FastMCP) -> None:
@@ -212,10 +215,19 @@ def register(mcp: FastMCP) -> None:
 
     @tool(title="Mail Draft", annotations=REVERSIBLE)
     def mail_draft(
-        provider: Mut, to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None
+        provider: Mut,
+        body: str,
+        to: str = "",
+        subject: str = "",
+        cc: str = "",
+        attachments: list[str] | None = None,
+        reply_to: ReplyTo = "",
     ) -> dict[str, Any]:
-        """Create a Gmail or Outlook draft without sending. The user sends manually; this never sends."""
-        return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments or [])
+        """Create a Gmail or Outlook draft without sending, as a new mail or a reply in an existing thread.
+        The user sends manually; this never sends."""
+        if not reply_to and not (to and subject):
+            raise ValueError("A new draft needs to and subject; a reply takes both from reply_to.")
+        return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments or [], reply_to=reply_to)
 
     @tool(title="Mail Recent Actions", annotations=READ_LOCAL)
     def mail_recent_actions(
