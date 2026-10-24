@@ -17,8 +17,9 @@ BASE = "https://outlook.office.com/api/v2.0"
 batch_move = batch_tag = batch_flag = batch_mark_read = batch_mark_spam = None
 
 
-def api(method: str, url: str, data: Mapping[str, Any] | None = None,
-        headers: Mapping[str, str] | None = None) -> dict[str, Any]:
+def api(
+    method: str, url: str, data: Mapping[str, Any] | None = None, headers: Mapping[str, str] | None = None
+) -> dict[str, Any]:
     token = get_token()
     try:
         return http(method, url, _headers(token, headers), data)
@@ -44,7 +45,7 @@ def _norm(m: dict[str, Any]) -> dict[str, Any]:
         "provider": "outlook",
         "id": m.get("Id"),
         "thread_id": m.get("ConversationId"),
-        "from": f"{frm.get('Name','')} <{frm.get('Address','')}>".strip(),
+        "from": f"{frm.get('Name', '')} <{frm.get('Address', '')}>".strip(),
         "to": _recipients(m.get("ToRecipients")),
         "cc": _recipients(m.get("CcRecipients")),
         "subject": m.get("Subject"),
@@ -60,10 +61,18 @@ def _norm(m: dict[str, Any]) -> dict[str, Any]:
 
 
 _WELL_KNOWN = {
-    "inbox": "inbox", "drafts": "drafts", "draft": "drafts",
-    "sent": "sentitems", "sentitems": "sentitems",
-    "trash": "deleteditems", "deleted": "deleteditems", "deleteditems": "deleteditems",
-    "junk": "junkemail", "spam": "junkemail", "junkemail": "junkemail", "archive": "archive",
+    "inbox": "inbox",
+    "drafts": "drafts",
+    "draft": "drafts",
+    "sent": "sentitems",
+    "sentitems": "sentitems",
+    "trash": "deleteditems",
+    "deleted": "deleteditems",
+    "deleteditems": "deleteditems",
+    "junk": "junkemail",
+    "spam": "junkemail",
+    "junkemail": "junkemail",
+    "archive": "archive",
 }
 
 
@@ -81,9 +90,15 @@ def _folder_id(name: str) -> str:
 
 def list_folders() -> list[dict[str, Any]]:
     data = api("GET", BASE + "/me/mailfolders?$top=100&$select=Id,DisplayName,UnreadItemCount,TotalItemCount")
-    return [{"id": f["Id"], "name": f.get("DisplayName"),
-             "unread": f.get("UnreadItemCount"), "total": f.get("TotalItemCount")}
-            for f in data.get("value", [])]
+    return [
+        {
+            "id": f["Id"],
+            "name": f.get("DisplayName"),
+            "unread": f.get("UnreadItemCount"),
+            "total": f.get("TotalItemCount"),
+        }
+        for f in data.get("value", [])
+    ]
 
 
 def create_folder(name: str) -> dict[str, Any]:
@@ -164,8 +179,9 @@ def _current_folder(mid: str) -> str | None:
 def move_message(mid: str, to_folder: str) -> dict[str, Any]:
     before = _current_folder(mid)
     r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": _folder_id(to_folder)})
-    audit({"provider": "outlook", "op": "move", "id": mid, "new_id": r.get("Id"),
-           "to": to_folder, "from_folder": before})
+    audit(
+        {"provider": "outlook", "op": "move", "id": mid, "new_id": r.get("Id"), "to": to_folder, "from_folder": before}
+    )
     return {"ok": True, "new_id": r.get("Id"), "moved_to": to_folder}
 
 
@@ -189,13 +205,15 @@ def tag_message(mid: str, labels: list[str] | str, mode: str = "add") -> dict[st
 def mark_read(mid: str, read: bool = True) -> dict[str, Any]:
     before = _message_state(mid)
     api("PATCH", f"{BASE}/me/messages/{mid}", {"IsRead": bool(read)})
-    audit({
-        "provider": "outlook",
-        "op": "mark_read",
-        "id": mid,
-        "read": bool(read),
-        "before_is_read": before.get("IsRead") if before else None,
-    })
+    audit(
+        {
+            "provider": "outlook",
+            "op": "mark_read",
+            "id": mid,
+            "read": bool(read),
+            "before_is_read": before.get("IsRead") if before else None,
+        }
+    )
     return {"ok": True, "read": bool(read)}
 
 
@@ -218,8 +236,16 @@ def mark_spam(mid: str, spam: bool = True) -> dict[str, Any]:
     before = _current_folder(mid)
     dest = "junkemail" if spam else "inbox"
     r = api("POST", f"{BASE}/me/messages/{mid}/move", {"DestinationId": dest})
-    audit({"provider": "outlook", "op": "mark_spam", "id": mid, "new_id": r.get("Id"),
-           "spam": bool(spam), "from_folder": before})
+    audit(
+        {
+            "provider": "outlook",
+            "op": "mark_spam",
+            "id": mid,
+            "new_id": r.get("Id"),
+            "spam": bool(spam),
+            "from_folder": before,
+        }
+    )
     return {"ok": True, "new_id": r.get("Id"), "spam": bool(spam)}
 
 
@@ -256,24 +282,39 @@ def rename_label(name: str, new_name: str) -> dict[str, Any]:
     for cat in api("GET", f"{BASE}/me/MasterCategories").get("value", []):
         if (cat.get("DisplayName") or "").lower() == name.lower():
             api("DELETE", f"{BASE}/me/MasterCategories/{cat['Id']}")
-            api("POST", f"{BASE}/me/MasterCategories",
-                {"DisplayName": new_name, "Color": cat.get("Color") or "Preset0"})
+            api(
+                "POST", f"{BASE}/me/MasterCategories", {"DisplayName": new_name, "Color": cat.get("Color") or "Preset0"}
+            )
             return {"ok": True, "renamed": new_name}
     raise ValueError(f"No category named '{name}'.")
 
 
 def list_filters() -> list[dict[str, Any]]:
     rules = api("GET", f"{BASE}/me/MailFolders/inbox/MessageRules").get("value", [])
-    return [{"id": r.get("Id"), "name": r.get("DisplayName"), "enabled": r.get("IsEnabled"),
-             "conditions": r.get("Conditions"), "actions": r.get("Actions")} for r in rules]
+    return [
+        {
+            "id": r.get("Id"),
+            "name": r.get("DisplayName"),
+            "enabled": r.get("IsEnabled"),
+            "conditions": r.get("Conditions"),
+            "actions": r.get("Actions"),
+        }
+        for r in rules
+    ]
 
 
-def create_filter(display_name: str, conditions: dict[str, Any], exceptions: dict[str, Any],
-                  actions: dict[str, Any]) -> dict[str, Any]:
+def create_filter(
+    display_name: str, conditions: dict[str, Any], exceptions: dict[str, Any], actions: dict[str, Any]
+) -> dict[str, Any]:
     rules = api("GET", f"{BASE}/me/MailFolders/inbox/MessageRules").get("value", [])
     sequence = max((r.get("Sequence") or 0 for r in rules), default=0) + 1
-    body = {"DisplayName": display_name, "Sequence": sequence, "IsEnabled": True,
-            "Conditions": conditions, "Actions": actions}
+    body = {
+        "DisplayName": display_name,
+        "Sequence": sequence,
+        "IsEnabled": True,
+        "Conditions": conditions,
+        "Actions": actions,
+    }
     if exceptions:
         body["Exceptions"] = exceptions
     created = api("POST", f"{BASE}/me/MailFolders/inbox/MessageRules", body)
@@ -301,12 +342,14 @@ def create_draft(
     for path in attachments or []:
         p = Path(path).expanduser()
         ctype, _ = mimetypes.guess_type(p.name)
-        atts.append({
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            "Name": p.name,
-            "ContentType": ctype or "application/octet-stream",
-            "ContentBytes": base64.b64encode(p.read_bytes()).decode(),
-        })
+        atts.append(
+            {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "Name": p.name,
+                "ContentType": ctype or "application/octet-stream",
+                "ContentBytes": base64.b64encode(p.read_bytes()).decode(),
+            }
+        )
         names.append(p.name)
     if atts:
         msg["Attachments"] = atts
@@ -325,8 +368,11 @@ def undo(e: dict[str, Any]) -> bool:
         api("PATCH", f"{BASE}/me/messages/{e['id']}", {"Categories": e.get("before", [])})
         return True
     if op == "flag":
-        api("PATCH", f"{BASE}/me/messages/{e['id']}",
-            {"Flag": {"FlagStatus": e.get("before_flag_status") or ("NotFlagged" if e.get("on") else "Flagged")}})
+        api(
+            "PATCH",
+            f"{BASE}/me/messages/{e['id']}",
+            {"Flag": {"FlagStatus": e.get("before_flag_status") or ("NotFlagged" if e.get("on") else "Flagged")}},
+        )
         return True
     if op == "mark_read":
         before_is_read = e.get("before_is_read")

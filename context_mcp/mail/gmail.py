@@ -28,8 +28,7 @@ def _creds() -> tuple[str, str, str]:
     refresh_token = env.get("GMAIL_REFRESH_TOKEN")
     if not (client_id and client_secret and refresh_token):
         raise RuntimeError(
-            "Gmail is not configured: set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, "
-            "and GMAIL_REFRESH_TOKEN in .env."
+            "Gmail is not configured: set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN in .env."
         )
     return client_id, client_secret, refresh_token
 
@@ -106,8 +105,12 @@ def create_folder(name: str) -> dict[str, Any]:
     for label in _labels():
         if str(label.get("name") or "").lower() == name.lower():
             return {"ok": True, "id": label["id"], "name": name, "created": False}
-    created = http("POST", API + "/labels", _auth(),
-                   {"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"})
+    created = http(
+        "POST",
+        API + "/labels",
+        _auth(),
+        {"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"},
+    )
     _labels_changed()
     return {"ok": True, "id": created.get("id"), "name": created.get("name"), "created": True}
 
@@ -170,9 +173,11 @@ def list_folders() -> list[dict[str, Any]]:
     return [{"id": label["id"], "name": label.get("name")} for label in _labels()]
 
 
-_METADATA = ("?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc"
-             "&metadataHeaders=Subject&metadataHeaders=Date"
-             "&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post")
+_METADATA = (
+    "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc"
+    "&metadataHeaders=Subject&metadataHeaders=Date"
+    "&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post"
+)
 
 
 def _metadata(mid: str) -> dict[str, Any]:
@@ -237,10 +242,13 @@ def list_messages_page(
     if cursor:
         params["pageToken"] = cursor
 
-    listed, _ = parallel_map(lambda call: call(), [
-        lambda: http("GET", f"{API}/messages?{urllib.parse.urlencode(params)}", _auth()),
-        _sync,
-    ])
+    listed, _ = parallel_map(
+        lambda call: call(),
+        [
+            lambda: http("GET", f"{API}/messages?{urllib.parse.urlencode(params)}", _auth()),
+            _sync,
+        ],
+    )
     ids = [item["id"] for item in (listed.get("messages") or [])[: int(limit)]]
     known = _hydrate(ids)
     return {
@@ -327,11 +335,11 @@ def _current_labels(mid: str) -> list[str]:
 
 
 def _modify(mid: str, add: list[str] | None = None, remove: list[str] | None = None) -> dict[str, Any]:
-    done = http("POST", f"{API}/messages/{mid}/modify", _auth(),
-                {"addLabelIds": add or [], "removeLabelIds": remove or []})
+    done = http(
+        "POST", f"{API}/messages/{mid}/modify", _auth(), {"addLabelIds": add or [], "removeLabelIds": remove or []}
+    )
     cache.forget([mid])
     return done
-
 
 
 def _before_labels(ids: list[str]) -> dict[str, list[str]]:
@@ -343,8 +351,12 @@ def batch_modify(ids: list[str], add: list[str] | None = None, remove: list[str]
     if not (add or remove):
         raise ValueError("batch_modify needs at least one label to add or remove.")
     for start in range(0, len(ids), 1000):
-        http("POST", API + "/messages/batchModify", _auth(),
-             {"ids": ids[start:start + 1000], "addLabelIds": add or [], "removeLabelIds": remove or []})
+        http(
+            "POST",
+            API + "/messages/batchModify",
+            _auth(),
+            {"ids": ids[start : start + 1000], "addLabelIds": add or [], "removeLabelIds": remove or []},
+        )
     cache.forget(ids)
 
 
@@ -353,8 +365,9 @@ def batch_move(ids: list[str], to_folder: str) -> None:
     before = _before_labels(ids)
     batch_modify(ids, add=[dest] if dest else None, remove=["INBOX"])
     for mid in ids:
-        audit({"provider": "gmail", "op": "move", "id": mid, "to": to_folder, "dest": dest,
-               "before_labels": before[mid]})
+        audit(
+            {"provider": "gmail", "op": "move", "id": mid, "to": to_folder, "dest": dest, "before_labels": before[mid]}
+        )
 
 
 def batch_tag(ids: list[str], labels: list[str] | str, mode: str = "add") -> None:
@@ -363,35 +376,39 @@ def batch_tag(ids: list[str], labels: list[str] | str, mode: str = "add") -> Non
     names = labels if isinstance(labels, list) else [labels]
     resolved = [label_id for label_id in (_label_id(name) for name in names) if label_id]
     before = _before_labels(ids)
-    batch_modify(ids, add=resolved if mode == "add" else None,
-                 remove=None if mode == "add" else resolved)
+    batch_modify(ids, add=resolved if mode == "add" else None, remove=None if mode == "add" else resolved)
     for mid in ids:
-        audit({"provider": "gmail", "op": "tag", "id": mid, "mode": mode, "labels": resolved,
-               "before_labels": before[mid]})
+        audit(
+            {
+                "provider": "gmail",
+                "op": "tag",
+                "id": mid,
+                "mode": mode,
+                "labels": resolved,
+                "before_labels": before[mid],
+            }
+        )
 
 
 def batch_flag(ids: list[str], on: bool = True) -> None:
     before = _before_labels(ids)
     batch_modify(ids, add=["STARRED"] if on else None, remove=None if on else ["STARRED"])
     for mid in ids:
-        audit({"provider": "gmail", "op": "flag", "id": mid, "on": bool(on),
-               "before_labels": before[mid]})
+        audit({"provider": "gmail", "op": "flag", "id": mid, "on": bool(on), "before_labels": before[mid]})
 
 
 def batch_mark_read(ids: list[str], read: bool = True) -> None:
     before = _before_labels(ids)
     batch_modify(ids, add=None if read else ["UNREAD"], remove=["UNREAD"] if read else None)
     for mid in ids:
-        audit({"provider": "gmail", "op": "mark_read", "id": mid, "read": bool(read),
-               "before_labels": before[mid]})
+        audit({"provider": "gmail", "op": "mark_read", "id": mid, "read": bool(read), "before_labels": before[mid]})
 
 
 def batch_mark_spam(ids: list[str], spam: bool = True) -> None:
     before = _before_labels(ids)
     batch_modify(ids, add=["SPAM"] if spam else ["INBOX"], remove=["INBOX"] if spam else ["SPAM"])
     for mid in ids:
-        audit({"provider": "gmail", "op": "mark_spam", "id": mid, "spam": bool(spam),
-               "before_labels": before[mid]})
+        audit({"provider": "gmail", "op": "mark_spam", "id": mid, "spam": bool(spam), "before_labels": before[mid]})
 
 
 def _restore_labels(mid: str, labels: list[str]) -> None:
@@ -512,9 +529,7 @@ def create_draft(
         p = Path(path).expanduser()
         ctype, _ = mimetypes.guess_type(p.name)
         maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
-        em.add_attachment(
-            p.read_bytes(), maintype=maintype, subtype=subtype or "octet-stream", filename=p.name
-        )
+        em.add_attachment(p.read_bytes(), maintype=maintype, subtype=subtype or "octet-stream", filename=p.name)
         names.append(p.name)
     raw = base64.urlsafe_b64encode(em.as_bytes()).decode()
     r = http("POST", f"{API}/drafts", _auth(), {"message": {"raw": raw}})

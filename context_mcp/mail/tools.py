@@ -13,7 +13,10 @@ from context_mcp.mail import dispatch, outlook_auth
 from context_mcp.mail.dispatch import batch, is_reversible, message_page, one
 from context_mcp.toolkit import DESTRUCTIVE, IDEMPOTENT, READ, READ_LOCAL, REVERSIBLE, threaded
 
-Both = Annotated[Literal["gmail", "outlook", "both"], Field(description="Mailbox provider. 'both' only for reads; ids are provider-specific.")]
+Both = Annotated[
+    Literal["gmail", "outlook", "both"],
+    Field(description="Mailbox provider. 'both' only for reads; ids are provider-specific."),
+]
 Mut = Annotated[Literal["gmail", "outlook"], Field(description="Mailbox to change. Never 'both' for actions.")]
 Ids = Annotated[list[str], Field(min_length=1, max_length=200, description="Provider-scoped ids from list/search.")]
 Labels = Annotated[list[str], Field(description="Gmail labels or Outlook categories to add or remove.")]
@@ -23,9 +26,14 @@ def register(mcp: FastMCP) -> None:
     tool = threaded(mcp)
 
     @tool(title="Mail List", annotations=READ)
-    def mail_list(provider: Both = "both", folder: str = "inbox", query: str = "",
-                  unread_only: bool = False,
-                  limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15, cursor: str = "") -> dict[str, Any]:
+    def mail_list(
+        provider: Both = "both",
+        folder: str = "inbox",
+        query: str = "",
+        unread_only: bool = False,
+        limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15,
+        cursor: str = "",
+    ) -> dict[str, Any]:
         """Browse a folder or triage recent mail. Returns messages plus cursors and counts; call mail_get for bodies."""
         return message_page(provider, folder=folder, query=query, unread_only=unread_only, limit=limit, cursor=cursor)
 
@@ -35,8 +43,12 @@ def register(mcp: FastMCP) -> None:
         return {"outlook": outlook_auth.status()}
 
     @tool(title="Mail Search", annotations=READ)
-    def mail_search(provider: Both = "both", query: str = "",
-                    limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15, cursor: str = "") -> dict[str, Any]:
+    def mail_search(
+        provider: Both = "both",
+        query: str = "",
+        limit: Annotated[int, Field(default=15, ge=1, le=50)] = 15,
+        cursor: str = "",
+    ) -> dict[str, Any]:
         """Find mail by person, topic, subject, or date across folders."""
         return message_page(provider, folder="all", query=query, limit=limit, cursor=cursor)
 
@@ -66,37 +78,61 @@ def register(mcp: FastMCP) -> None:
     def mail_move(provider: Mut, ids: Ids, to_folder: str) -> dict[str, Any]:
         """Move one or many messages to a folder or label. Reversible with mail_undo."""
         b = one(provider)
-        return batch(provider, "move", ids, lambda mid: b.move_message(mid, to_folder),
-                     b.batch_move and (lambda mids: b.batch_move(mids, to_folder)))
+        return batch(
+            provider,
+            "move",
+            ids,
+            lambda mid: b.move_message(mid, to_folder),
+            b.batch_move and (lambda mids: b.batch_move(mids, to_folder)),
+        )
 
     @tool(title="Mail Tag", annotations=IDEMPOTENT)
-    def mail_tag(provider: Mut, ids: Ids, labels: Labels,
-                 mode: Literal["add", "remove"] = "add") -> dict[str, Any]:
+    def mail_tag(provider: Mut, ids: Ids, labels: Labels, mode: Literal["add", "remove"] = "add") -> dict[str, Any]:
         """Add or remove Gmail labels or Outlook categories on one or many messages. Reversible."""
         b = one(provider)
-        return batch(provider, "tag", ids, lambda mid: b.tag_message(mid, labels, mode=mode),
-                     b.batch_tag and (lambda mids: b.batch_tag(mids, labels, mode)))
+        return batch(
+            provider,
+            "tag",
+            ids,
+            lambda mid: b.tag_message(mid, labels, mode=mode),
+            b.batch_tag and (lambda mids: b.batch_tag(mids, labels, mode)),
+        )
 
     @tool(title="Mail Mark Read", annotations=IDEMPOTENT)
     def mail_mark_read(provider: Mut, ids: Ids, read: bool = True) -> dict[str, Any]:
         """Mark one or many messages read or unread. Reversible."""
         b = one(provider)
-        return batch(provider, "mark_read", ids, lambda mid: b.mark_read(mid, read=read),
-                     b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=read)))
+        return batch(
+            provider,
+            "mark_read",
+            ids,
+            lambda mid: b.mark_read(mid, read=read),
+            b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=read)),
+        )
 
     @tool(title="Mail Flag", annotations=IDEMPOTENT)
     def mail_flag(provider: Mut, ids: Ids, on: bool = True) -> dict[str, Any]:
         """Flag Outlook messages or star Gmail messages, one or many. Reversible."""
         b = one(provider)
-        return batch(provider, "flag", ids, lambda mid: b.flag_message(mid, on=on),
-                     b.batch_flag and (lambda mids: b.batch_flag(mids, on=on)))
+        return batch(
+            provider,
+            "flag",
+            ids,
+            lambda mid: b.flag_message(mid, on=on),
+            b.batch_flag and (lambda mids: b.batch_flag(mids, on=on)),
+        )
 
     @tool(title="Mail Mark Spam", annotations=REVERSIBLE)
     def mail_mark_spam(provider: Mut, ids: Ids, spam: bool = True) -> dict[str, Any]:
         """Mark one or many messages spam/junk or clear it. Gmail Spam, Outlook Junk. Reversible."""
         b = one(provider)
-        return batch(provider, "mark_spam", ids, lambda mid: b.mark_spam(mid, spam=spam),
-                     b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=spam)))
+        return batch(
+            provider,
+            "mark_spam",
+            ids,
+            lambda mid: b.mark_spam(mid, spam=spam),
+            b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=spam)),
+        )
 
     @tool(title="Mail Trash", annotations=DESTRUCTIVE)
     def mail_trash(provider: Mut, ids: Ids) -> dict[str, Any]:
@@ -131,16 +167,33 @@ def register(mcp: FastMCP) -> None:
         return one(provider).list_filters()
 
     @tool(title="Mail Create Filter", annotations=REVERSIBLE)
-    def mail_create_filter(provider: Mut, from_address: str = "", subject_contains: str = "",
-                           except_subject_contains: str = "",
-                           add_label: str = "", move_to: str = "", mark_read: bool = False,
-                           mark_as_spam: bool = False, stop_processing: bool = False,
-                           name: str = "") -> dict[str, Any]:
+    def mail_create_filter(
+        provider: Mut,
+        from_address: str = "",
+        subject_contains: str = "",
+        except_subject_contains: str = "",
+        add_label: str = "",
+        move_to: str = "",
+        mark_read: bool = False,
+        mark_as_spam: bool = False,
+        stop_processing: bool = False,
+        name: str = "",
+    ) -> dict[str, Any]:
         """Create a Gmail filter or Outlook inbox rule from at least one condition and one action.
         Match fields take Gmail syntax, "a OR b OR c"; on Outlook each alternative becomes its own
         match entry. Outlook rules run in creation order; stop_processing ends evaluation there."""
-        return _create_filter(provider, name, from_address, subject_contains, except_subject_contains,
-                              add_label, move_to, mark_read, mark_as_spam, stop_processing)
+        return _create_filter(
+            provider,
+            name,
+            from_address,
+            subject_contains,
+            except_subject_contains,
+            add_label,
+            move_to,
+            mark_read,
+            mark_as_spam,
+            stop_processing,
+        )
 
     @tool(title="Mail Delete Filter", annotations=DESTRUCTIVE)
     def mail_delete_filter(provider: Mut, filter_id: str) -> dict[str, Any]:
@@ -148,15 +201,18 @@ def register(mcp: FastMCP) -> None:
         return one(provider).delete_filter(filter_id)
 
     @tool(title="Mail Draft", annotations=REVERSIBLE)
-    def mail_draft(provider: Mut, to: str, subject: str, body: str, cc: str = "",
-                   attachments: list[str] | None = None) -> dict[str, Any]:
+    def mail_draft(
+        provider: Mut, to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None
+    ) -> dict[str, Any]:
         """Create a Gmail or Outlook draft without sending. The user sends manually; this never sends."""
         return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments or [])
 
     @tool(title="Mail Recent Actions", annotations=READ_LOCAL)
-    def mail_recent_actions(provider: Both = "both",
-                            limit: Annotated[int, Field(default=20, ge=1, le=200)] = 20,
-                            reversible_only: bool = False) -> dict[str, Any]:
+    def mail_recent_actions(
+        provider: Both = "both",
+        limit: Annotated[int, Field(default=20, ge=1, le=200)] = 20,
+        reversible_only: bool = False,
+    ) -> dict[str, Any]:
         """Read the local audit log to report cleanup progress and what mail_undo can reverse."""
         out: list[dict[str, Any]] = []
         for entry in reversed(read_audit()):
@@ -184,6 +240,7 @@ def register(mcp: FastMCP) -> None:
                 provider = str(entry["provider"])
                 if dispatch.PROVIDERS[provider].undo(entry):
                     from context_mcp.common import audit
+
                     audit({"provider": provider, "op": "undo", "of": entry.get("op"), "id": entry.get("id")})
                     done.append({"reversed": entry.get("op"), "provider": provider, "id": entry.get("id")})
                     count += 1
@@ -193,11 +250,16 @@ def register(mcp: FastMCP) -> None:
         return {"undone": done}
 
     @tool(title="Mail Bulk Cleanup", annotations=DESTRUCTIVE)
-    def mail_bulk(provider: Mut, query: str,
-                  action: Literal["trash", "mark_read", "mark_spam", "move", "tag"],
-                  dry_run: bool = True, folder: str = "all",
-                  limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
-                  to_folder: str = "", labels: list[str] | None = None) -> dict[str, Any]:
+    def mail_bulk(
+        provider: Mut,
+        query: str,
+        action: Literal["trash", "mark_read", "mark_spam", "move", "tag"],
+        dry_run: bool = True,
+        folder: str = "all",
+        limit: Annotated[int, Field(default=50, ge=1, le=200)] = 50,
+        to_folder: str = "",
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Preview then apply one action to messages matching a query. Always dry_run first, show the sample, then dry_run=false. Trash and mark_read are recoverable."""
         if not dry_run and not query.strip() and folder.lower() in {"all", "allitems"}:
             raise ValueError("Refusing to mutate all mail without a query or narrowed folder.")
@@ -205,41 +267,80 @@ def register(mcp: FastMCP) -> None:
         page = b.list_messages_page(folder=folder, query=query, limit=limit)
         rows = page.get("messages", [])
         ids = [str(m["id"]) for m in rows if m.get("id")]
-        sample = [{"id": m.get("id"), "from": m.get("from"), "subject": m.get("subject"), "date": m.get("date")} for m in rows[:10]]
-        out: dict[str, Any] = {"provider": provider, "query": query, "action": action,
-                               "dry_run": dry_run, "matched_in_page": len(ids), "sample": sample}
+        sample = [
+            {"id": m.get("id"), "from": m.get("from"), "subject": m.get("subject"), "date": m.get("date")}
+            for m in rows[:10]
+        ]
+        out: dict[str, Any] = {
+            "provider": provider,
+            "query": query,
+            "action": action,
+            "dry_run": dry_run,
+            "matched_in_page": len(ids),
+            "sample": sample,
+        }
         if dry_run:
             out["next_step"] = "Show the sample, then re-run with dry_run=false to apply."
             return out
         if action == "move":
             if not to_folder:
                 raise ValueError("action 'move' requires to_folder.")
-            out["apply"] = batch(provider, action, ids, lambda mid: b.move_message(mid, to_folder),
-                                 b.batch_move and (lambda mids: b.batch_move(mids, to_folder)))
+            out["apply"] = batch(
+                provider,
+                action,
+                ids,
+                lambda mid: b.move_message(mid, to_folder),
+                b.batch_move and (lambda mids: b.batch_move(mids, to_folder)),
+            )
         elif action == "tag":
             if not labels:
                 raise ValueError("action 'tag' requires labels.")
-            out["apply"] = batch(provider, action, ids, lambda mid: b.tag_message(mid, labels),
-                                 b.batch_tag and (lambda mids: b.batch_tag(mids, labels)))
+            out["apply"] = batch(
+                provider,
+                action,
+                ids,
+                lambda mid: b.tag_message(mid, labels),
+                b.batch_tag and (lambda mids: b.batch_tag(mids, labels)),
+            )
         elif action == "mark_read":
-            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_read(mid, read=True),
-                                 b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=True)))
+            out["apply"] = batch(
+                provider,
+                action,
+                ids,
+                lambda mid: b.mark_read(mid, read=True),
+                b.batch_mark_read and (lambda mids: b.batch_mark_read(mids, read=True)),
+            )
         elif action == "mark_spam":
-            out["apply"] = batch(provider, action, ids, lambda mid: b.mark_spam(mid, spam=True),
-                                 b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=True)))
+            out["apply"] = batch(
+                provider,
+                action,
+                ids,
+                lambda mid: b.mark_spam(mid, spam=True),
+                b.batch_mark_spam and (lambda mids: b.batch_mark_spam(mids, spam=True)),
+            )
         else:
             out["apply"] = batch(provider, action, ids, b.trash_message)
         return out
 
 
 def _alternatives(expr: str) -> list[str]:
-    return [t for t in (p.strip().strip("()\"") for p in re.split(r"\s+OR\s+", expr.strip().strip("()"))) if t]
+    return [t for t in (p.strip().strip('()"') for p in re.split(r"\s+OR\s+", expr.strip().strip("()"))) if t]
 
 
-def _create_filter(provider: str, name: str, from_address: str, subject_contains: str,
-                   except_subject_contains: str, add_label: str, move_to: str, mark_read: bool,
-                   mark_as_spam: bool, stop_processing: bool) -> dict[str, Any]:
+def _create_filter(
+    provider: str,
+    name: str,
+    from_address: str,
+    subject_contains: str,
+    except_subject_contains: str,
+    add_label: str,
+    move_to: str,
+    mark_read: bool,
+    mark_as_spam: bool,
+    stop_processing: bool,
+) -> dict[str, Any]:
     from context_mcp.mail import gmail, outlook
+
     if not (from_address or subject_contains):
         raise ValueError("A filter needs at least one condition: from_address or subject_contains.")
     if not (add_label or move_to or mark_read or mark_as_spam):

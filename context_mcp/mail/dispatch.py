@@ -34,8 +34,9 @@ def _merge(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def message_page(provider: str, folder: str = "inbox", query: str = "",
-                 unread_only: bool = False, limit: int = 15, cursor: str = "") -> dict[str, Any]:
+def message_page(
+    provider: str, folder: str = "inbox", query: str = "", unread_only: bool = False, limit: int = 15, cursor: str = ""
+) -> dict[str, Any]:
     if cursor and provider == "both":
         raise ValueError("Use provider='gmail' or provider='outlook' when passing a cursor.")
     messages: list[dict[str, Any]] = []
@@ -47,8 +48,13 @@ def message_page(provider: str, folder: str = "inbox", query: str = "",
     def fetch(target: tuple[str, Any]) -> tuple[str, dict[str, Any] | Exception]:
         name, backend = target
         try:
-            return name, backend.list_messages_page(folder=folder, query=query, unread_only=unread_only,
-                                                    limit=limit, cursor=cursor if provider != "both" else "")
+            return name, backend.list_messages_page(
+                folder=folder,
+                query=query,
+                unread_only=unread_only,
+                limit=limit,
+                cursor=cursor if provider != "both" else "",
+            )
         except Exception as exc:
             return name, exc
 
@@ -63,12 +69,23 @@ def message_page(provider: str, folder: str = "inbox", query: str = "",
             estimates[name] = int(page["result_size_estimate"])
         if page.get("total_count") is not None:
             totals[name] = int(page["total_count"])
-    return {"messages": _merge(messages), "returned": len(messages), "next_cursors": next_cursors,
-            "result_size_estimates": estimates, "total_counts": totals, "errors": errors}
+    return {
+        "messages": _merge(messages),
+        "returned": len(messages),
+        "next_cursors": next_cursors,
+        "result_size_estimates": estimates,
+        "total_counts": totals,
+        "errors": errors,
+    }
 
 
-def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str], dict[str, Any]],
-          apply_all: Callable[[list[str]], None] | None = None) -> dict[str, Any]:
+def batch(
+    provider: str,
+    action: str,
+    ids: list[str],
+    apply_one: Callable[[str], dict[str, Any]],
+    apply_all: Callable[[list[str]], None] | None = None,
+) -> dict[str, Any]:
     def run(mid: str) -> dict[str, Any]:
         try:
             return {"id": mid, "ok": True, "result": apply_one(mid)}
@@ -81,12 +98,19 @@ def batch(provider: str, action: str, ids: list[str], apply_one: Callable[[str],
     else:
         results = parallel_map(run, ids)
     ok = sum(1 for r in results if r["ok"])
-    return {"provider": provider, "action": action, "requested": len(ids),
-            "succeeded": ok, "failed": len(ids) - ok, "results": results}
+    return {
+        "provider": provider,
+        "action": action,
+        "requested": len(ids),
+        "succeeded": ok,
+        "failed": len(ids) - ok,
+        "results": results,
+    }
 
 
 def is_reversible(entry: dict[str, Any]) -> bool:
     return entry.get("op") in {"move", "tag", "mark_read", "flag", "trash", "mark_spam", "untrash"}
+
 
 def _warm_gmail() -> None:
     gmail.list_folders()
@@ -95,6 +119,7 @@ def _warm_gmail() -> None:
 
 def prewarm() -> None:
     """Mint tokens and open the TLS connections before the first tool call needs them."""
+
     def warm(name: str, call: Callable[[], Any]) -> None:
         try:
             call()
