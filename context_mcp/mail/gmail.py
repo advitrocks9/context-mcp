@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import base64
+import email
 import mimetypes
 import threading
 import time
 import urllib.parse
+from email import policy
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
 from context_mcp.common import audit, http, load_env, parallel_map
-from context_mcp.mail import cache
+from context_mcp.mail import cache, compose
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -576,6 +578,43 @@ def create_draft(
         "thread_id": draft.get("threadId"),
         "attachments": names,
     }
+
+
+def _draft_id(mid: str) -> str:
+    page = ""
+    while True:
+        data = http("GET", f"{API}/drafts?maxResults=500" + (f"&pageToken={page}" if page else ""), _auth())
+        for draft in data.get("drafts") or []:
+            if draft["message"]["id"] == mid:
+                return str(draft["id"])
+        page = data.get("nextPageToken", "")
+        if not page:
+            raise ValueError(f"Message {mid} is not a Gmail draft.")
+
+
+def edit_draft(
+    mid: str, swaps: list[dict[str, str]], to: str | None = None, cc: str | None = None, subject: str | None = None
+) -> dict[str, Any]:
+    did = _draft_id(mid)
+    current = http("GET", f"{API}/drafts/{did}?format=raw", _auth())["message"]
+    em = email.message_from_bytes(base64.urlsafe_b64decode(current["raw"] + "=="), policy=policy.default)
+    if swaps:
+        parts = {kind: em.get_body(preferencelist=(kind,)) for kind in ("plain", "html")}
+        if all(part is None for part in parts.values()):
+            raise ValueError(f"Draft {mid} has no text body to edit.")
+        for kind, part in parts.items():
+            if part is not None:
+                part.set_content(compose.swap(part.get_content(), swaps, html=kind == "html"), subtype=kind)
+    for name, value in (("To", to), ("Cc", cc), ("Subject", subject)):
+        if value is not None:
+            del em[name]
+            em[name] = value
+    raw = base64.urlsafe_b64encode(em.as_bytes()).decode()
+    saved = http(
+        "PUT", f"{API}/drafts/{did}", _auth(), {"id": did, "message": {"raw": raw, "threadId": current["threadId"]}}
+    )["message"]
+    audit({"provider": "gmail", "op": "edit_draft", "id": mid, "new_id": saved["id"], "swaps": swaps})
+    return {"ok": True, "draft_id": did, "id": saved["id"], "thread_id": saved["threadId"]}
 
 
 def undo(e: dict[str, Any]) -> bool:

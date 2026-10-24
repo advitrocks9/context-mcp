@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from context_mcp.common import HTTPError, audit, http
-from context_mcp.mail.compose import html_text
+from context_mcp.mail.compose import html_text, swap
 from context_mcp.mail.outlook_auth import drop_access, get_token
 
 BASE = "https://outlook.office.com/api/v2.0"
@@ -374,6 +374,28 @@ def create_draft(
         }
     )
     return {"ok": True, "draft_id": r.get("Id"), "thread_id": r.get("ConversationId"), "attachments": names}
+
+
+def edit_draft(
+    mid: str, swaps: list[dict[str, str]], to: str | None = None, cc: str | None = None, subject: str | None = None
+) -> dict[str, Any]:
+    m = api("GET", f"{BASE}/me/messages/{mid}?$select=IsDraft,Body")
+    if not m.get("IsDraft"):
+        raise ValueError(f"Message {mid} is not an Outlook draft.")
+    fields: dict[str, Any] = {}
+    if swaps:
+        body = m.get("Body") or {}
+        kind = body.get("ContentType", "Text")
+        fields["Body"] = {"ContentType": kind, "Content": swap(body.get("Content", ""), swaps, html=kind == "HTML")}
+    if to is not None:
+        fields["ToRecipients"] = _addresses(to)
+    if cc is not None:
+        fields["CcRecipients"] = _addresses(cc)
+    if subject is not None:
+        fields["Subject"] = subject
+    r = api("PATCH", f"{BASE}/me/messages/{mid}", fields)
+    audit({"provider": "outlook", "op": "edit_draft", "id": mid, "swaps": swaps})
+    return {"ok": True, "draft_id": r.get("Id"), "thread_id": r.get("ConversationId")}
 
 
 def undo(e: dict[str, Any]) -> bool:

@@ -6,7 +6,7 @@ import re
 from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from context_mcp.common import read_audit
 from context_mcp.mail import dispatch, outlook_auth
@@ -20,6 +20,15 @@ Both = Annotated[
 Mut = Annotated[Literal["gmail", "outlook"], Field(description="Mailbox to change. Never 'both' for actions.")]
 Ids = Annotated[list[str], Field(min_length=1, max_length=200, description="Provider-scoped ids from list/search.")]
 Labels = Annotated[list[str], Field(description="Gmail labels or Outlook categories to add or remove.")]
+
+
+class Swap(BaseModel):
+    old: str
+    new: str
+
+
+Swaps = Annotated[list[Swap], Field(description="Exact text swaps; each old must match once per body part.")]
+
 ReplyTo = Annotated[
     str, Field(description="Message id to reply to. Threads the draft and defaults to and subject from it.")
 ]
@@ -229,6 +238,22 @@ def register(mcp: FastMCP) -> None:
             raise ValueError("A new draft needs to and subject; a reply takes both from reply_to.")
         return one(provider).create_draft(to, subject, body, cc=cc, attachments=attachments or [], reply_to=reply_to)
 
+    @tool(title="Mail Edit Draft", annotations=REVERSIBLE)
+    def mail_edit_draft(
+        provider: Mut,
+        id: str,
+        swaps: Swaps | None = None,
+        to: str | None = None,
+        cc: str | None = None,
+        subject: str | None = None,
+    ) -> dict[str, Any]:
+        """Edit an existing draft in place by exact text swaps, keeping its thread, formatting and attachments.
+        Pass the message id from list or get. A failed swap writes nothing. This never sends."""
+        if not swaps and to is None and cc is None and subject is None:
+            raise ValueError("Nothing to edit: pass swaps, to, cc or subject.")
+        edits = [s.model_dump() for s in swaps or []]
+        return one(provider).edit_draft(id, edits, to=to, cc=cc, subject=subject)
+
     @tool(title="Mail Recent Actions", annotations=READ_LOCAL)
     def mail_recent_actions(
         provider: Both = "both",
@@ -250,7 +275,7 @@ def register(mcp: FastMCP) -> None:
 
     @tool(title="Mail Undo", annotations=REVERSIBLE)
     def mail_undo(n: Annotated[int, Field(default=1, ge=1, le=10)] = 1) -> dict[str, Any]:
-        """Undo recent move, tag, read/unread, flag, spam, or trash actions. Draft creation is not undone."""
+        """Undo recent move, tag, read/unread, flag, spam, or trash actions. Draft creation and edits are not undone."""
         done: list[dict[str, Any]] = []
         count = 0
         for entry in reversed(read_audit()):
