@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from context_mcp.common import HTTPError, audit, http
-from context_mcp.mail.compose import html_text, swap
+from context_mcp.mail.compose import html_body, swap
 from context_mcp.mail.outlook_auth import drop_access, get_token
 
 BASE = "https://outlook.office.com/api/v2.0"
@@ -352,13 +352,13 @@ def create_draft(
     if subject:
         fields["Subject"] = subject
     if reply_to:
-        r = api("POST", f"{BASE}/me/messages/{reply_to}/createreply", {"Comment": html_text(body)})
+        r = api("POST", f"{BASE}/me/messages/{reply_to}/createreply", {"Comment": html_body(body)})
         if fields:
             r = api("PATCH", f"{BASE}/me/messages/{r['Id']}", fields)
         for att in atts:
             api("POST", f"{BASE}/me/messages/{r['Id']}/attachments", att)
     else:
-        fields["Body"] = {"ContentType": "Text", "Content": body}
+        fields["Body"] = {"ContentType": "HTML", "Content": html_body(body)}
         if atts:
             fields["Attachments"] = atts
         r = api("POST", f"{BASE}/me/messages", fields)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import email
 import mimetypes
+import re
 import threading
 import time
 import urllib.parse
@@ -21,6 +22,7 @@ API = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 _cache: dict[str, str | float | None] = {"token": None, "exp": 0.0}
 _cache_lock = threading.Lock()
+_compose_style: dict[str, str] = {}
 
 
 def _creds() -> tuple[str, str, str]:
@@ -529,6 +531,15 @@ _REPLY_HEADERS = (
 )
 
 
+def _default_style() -> str:
+    if "style" not in _compose_style:
+        sent = http("GET", f"{API}/messages?labelIds=SENT&maxResults=10", _auth()).get("messages") or []
+        pages = (http("GET", f"{API}/messages/{item['id']}?format=full", _auth())["payload"] for item in sent)
+        found = (re.search(r'class="gmail_default" style="([^"]*)"', _part_text(page, "text/html")) for page in pages)
+        _compose_style["style"] = next((match.group(1) for match in found if match), "")
+    return _compose_style["style"]
+
+
 def create_draft(
     to: str, subject: str, body: str, cc: str = "", attachments: list[str] | None = None, reply_to: str = ""
 ) -> dict[str, Any]:
@@ -551,6 +562,7 @@ def create_draft(
         em["Cc"] = cc
     em["Subject"] = subject
     em.set_content(body)
+    em.add_alternative(compose.html_body(body, _default_style()), subtype="html")
     names: list[str] = []
     for path in attachments or []:
         p = Path(path).expanduser()
